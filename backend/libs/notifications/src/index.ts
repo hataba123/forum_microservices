@@ -2,3 +2,4 @@
 export * from "./notifications.module";
 export * from "./controllers/notifications.controller";
 export * from "./services/notifications.service";
+export * from "./gateways/notifications.gateway";

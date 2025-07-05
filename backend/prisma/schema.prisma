@@ -23,12 +23,13 @@ model User {
   updatedAt DateTime  @updatedAt
 
   // Relations
-  sessions     Session[]
-  votes        Vote[]
-  blockedUsers BlockedUser[] @relation("BlockerUser")
-  blockedBy    BlockedUser[] @relation("BlockedUser")
-  threads      Thread[]
-  posts        Post[]
+  sessions      Session[]
+  votes         Vote[]
+  blockedUsers  BlockedUser[] @relation("BlockerUser")
+  blockedBy     BlockedUser[] @relation("BlockedUser")
+  threads       Thread[]
+  posts         Post[]
+  notifications Notification[]
 
   @@map("users")
 }
@@ -139,6 +140,44 @@ model BlockedUser {
   @@map("blocked_users")
 }
 
+// Model Notification - Hệ thống thông báo
+model Notification {
+  id          String             @id @default(cuid())
+  userId      String            // Người nhận thông báo
+  type        NotificationType  // Loại thông báo
+  title       String            // Tiêu đề thông báo
+  content     String            // Nội dung thông báo
+  relatedId   String?           // ID liên quan (post, thread, user...)
+  relatedType String?           // Loại đối tượng liên quan
+  isRead      Boolean           @default(false)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+// Model EmailQueue - Hàng đợi email
+model EmailQueue {
+  id           String      @id @default(cuid())
+  to           String      // Email người nhận
+  subject      String      // Tiêu đề email
+  content      String      @db.Text // Nội dung email
+  template     String?     // Template sử dụng
+  status       EmailStatus @default(PENDING) // Trạng thái
+  attempts     Int         @default(0) // Số lần thử gửi
+  maxRetries   Int         @default(3) // Số lần retry tối đa
+  scheduledAt  DateTime    @default(now()) // Thời gian dự kiến gửi
+  sentAt       DateTime?   // Thời gian gửi thực tế
+  errorMessage String?    // Thông báo lỗi nếu có
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@map("email_queue")
+}
+
 // Enums
 enum UserRole {
   ADMIN
@@ -155,4 +194,24 @@ enum UserStatus {
 enum VoteType {
   THREAD
   POST
+}
+
+// Enum cho notification types
+enum NotificationType {
+  NEW_POST       // Có bài viết mới trong thread
+  NEW_REPLY      // Có reply cho bài viết
+  THREAD_PINNED  // Thread được ghim
+  THREAD_LOCKED  // Thread bị khóa
+  USER_MENTIONED // Được mention
+  VOTE_RECEIVED  // Nhận vote
+  SYSTEM         // Thông báo hệ thống
+}
+
+// Enum cho email status
+enum EmailStatus {
+  PENDING    // Chờ gửi
+  SENDING    // Đang gửi
+  SENT       // Đã gửi
+  FAILED     // Gửi thất bại
+  CANCELLED  // Đã hủy
 }
