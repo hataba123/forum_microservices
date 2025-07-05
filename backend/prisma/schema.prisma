@@ -1,0 +1,158 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Model User - Quản lý người dùng
+model User {
+  id        String    @id @default(cuid())
+  username  String    @unique
+  email     String    @unique
+  password  String
+  avatar    String?
+  role      UserRole  @default(USER)
+  status    UserStatus @default(ACTIVE)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  // Relations
+  sessions     Session[]
+  votes        Vote[]
+  blockedUsers BlockedUser[] @relation("BlockerUser")
+  blockedBy    BlockedUser[] @relation("BlockedUser")
+  threads      Thread[]
+  posts        Post[]
+
+  @@map("users")
+}
+
+// Model Session - Quản lý phiên đăng nhập
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+// Model Category - Danh mục forum
+model Category {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  slug        String   @unique
+  order       Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  threads Thread[]
+
+  @@map("categories")
+}
+
+// Model Thread - Chủ đề
+model Thread {
+  id          String   @id @default(cuid())
+  title       String
+  slug        String   @unique
+  content     String
+  authorId    String
+  categoryId  String
+  isPinned    Boolean  @default(false)
+  isLocked    Boolean  @default(false)
+  viewCount   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  author   User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  posts    Post[]
+
+  @@map("threads")
+}
+
+// Model Post - Bài viết/Trả lời
+model Post {
+  id        String   @id @default(cuid())
+  content   String
+  authorId  String
+  threadId  String
+  parentId  String?  // Cho reply
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  author   User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  thread   Thread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  parent   Post?  @relation("PostReplies", fields: [parentId], references: [id])
+  children Post[] @relation("PostReplies")
+  votes    Vote[] @relation("PostVotes")
+
+  @@map("posts")
+}
+
+// Model Vote - Hệ thống vote
+model Vote {
+  id       String   @id @default(cuid())
+  userId   String
+  targetId String   // ID của thread hoặc post
+  type     VoteType // THREAD hoặc POST
+  value    Int      // 1 cho upvote, -1 cho downvote
+  createdAt DateTime @default(now())
+
+  // Relations
+  user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post Post? @relation("PostVotes", fields: [targetId], references: [id])
+
+  @@unique([userId, targetId, type])
+  @@map("votes")
+}
+
+// Model BlockedUser - Danh sách chặn
+model BlockedUser {
+  id         String   @id @default(cuid())
+  blockerId  String   // User thực hiện chặn
+  blockedId  String   // User bị chặn
+  reason     String?
+  createdAt  DateTime @default(now())
+
+  // Relations
+  blocker User @relation("BlockerUser", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocked User @relation("BlockedUser", fields: [blockedId], references: [id], onDelete: Cascade)
+
+  @@unique([blockerId, blockedId])
+  @@map("blocked_users")
+}
+
+// Enums
+enum UserRole {
+  ADMIN
+  MODERATOR
+  USER
+}
+
+enum UserStatus {
+  ACTIVE
+  BANNED
+  PENDING
+}
+
+enum VoteType {
+  THREAD
+  POST
+}

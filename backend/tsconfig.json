@@ -1,0 +1,41 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "declaration": true,
+    "removeComments": true,
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "allowSyntheticDefaultImports": true,
+    "target": "ES2021",
+    "sourceMap": true,
+    "outDir": "./dist",
+    "baseUrl": "./",
+    "incremental": true,
+    "skipLibCheck": true,
+    "strictNullChecks": false,
+    "noImplicitAny": false,
+    "strictBindCallApply": false,
+    "forceConsistentCasingInFileNames": false,
+    "noFallthroughCasesInSwitch": false,
+    "paths": {
+      "@libs/auth": ["libs/auth/src"],
+      "@libs/auth/*": ["libs/auth/src/*"],
+      "@libs/users": ["libs/users/src"],
+      "@libs/users/*": ["libs/users/src/*"],
+      "@libs/categories": ["libs/categories/src"],
+      "@libs/categories/*": ["libs/categories/src/*"],
+      "@libs/threads": ["libs/threads/src"],
+      "@libs/threads/*": ["libs/threads/src/*"],
+      "@libs/posts": ["libs/posts/src"],
+      "@libs/posts/*": ["libs/posts/src/*"],
+      "@libs/votes": ["libs/votes/src"],
+      "@libs/votes/*": ["libs/votes/src/*"],
+      "@libs/notifications": ["libs/notifications/src"],
+      "@libs/notifications/*": ["libs/notifications/src/*"],
+      "@libs/media": ["libs/media/src"],
+      "@libs/media/*": ["libs/media/src/*"],
+      "@libs/shared": ["libs/shared/src"],
+      "@libs/shared/*": ["libs/shared/src/*"]
+    }
+  }
+}

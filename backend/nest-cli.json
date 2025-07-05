@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json.schemastore.org/nest-cli",
+  "collection": "@nestjs/schematics",
+  "sourceRoot": "apps/api-gateway/src",
+  "compilerOptions": {
+    "deleteOutDir": true,
+    "webpack": true,
+    "tsConfigPath": "apps/api-gateway/tsconfig.app.json"
+  },
+  "monorepo": true,
+  "root": "apps/api-gateway",
+  "projects": {
+    "api-gateway": {
+      "type": "application",
+      "root": "apps/api-gateway",
+      "entryFile": "main",
+      "sourceRoot": "apps/api-gateway/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/api-gateway/tsconfig.app.json"
+      }
+    },
+    "auth": {
+      "type": "library",
+      "root": "libs/auth",
+      "entryFile": "index",
+      "sourceRoot": "libs/auth/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/auth/tsconfig.lib.json"
+      }
+    },
+    "users": {
+      "type": "library",
+      "root": "libs/users",
+      "entryFile": "index",
+      "sourceRoot": "libs/users/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/users/tsconfig.lib.json"
+      }
+    },
+    "categories": {
+      "type": "library",
+      "root": "libs/categories",
+      "entryFile": "index",
+      "sourceRoot": "libs/categories/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/categories/tsconfig.lib.json"
+      }
+    },
+    "threads": {
+      "type": "library",
+      "root": "libs/threads",
+      "entryFile": "index",
+      "sourceRoot": "libs/threads/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/threads/tsconfig.lib.json"
+      }
+    },
+    "posts": {
+      "type": "library",
+      "root": "libs/posts",
+      "entryFile": "index",
+      "sourceRoot": "libs/posts/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/posts/tsconfig.lib.json"
+      }
+    },
+    "votes": {
+      "type": "library",
+      "root": "libs/votes",
+      "entryFile": "index",
+      "sourceRoot": "libs/votes/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/votes/tsconfig.lib.json"
+      }
+    },
+    "notifications": {
+      "type": "library",
+      "root": "libs/notifications",
+      "entryFile": "index",
+      "sourceRoot": "libs/notifications/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/notifications/tsconfig.lib.json"
+      }
+    },
+    "media": {
+      "type": "library",
+      "root": "libs/media",
+      "entryFile": "index",
+      "sourceRoot": "libs/media/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/media/tsconfig.lib.json"
+      }
+    },
+    "shared": {
+      "type": "library",
+      "root": "libs/shared",
+      "entryFile": "index",
+      "sourceRoot": "libs/shared/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/shared/tsconfig.lib.json"
+      }
+    }
+  }
+}
