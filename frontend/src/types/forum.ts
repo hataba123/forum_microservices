@@ -26,6 +26,13 @@ export interface ThreadCategory {
   slug: string;
 }
 
+export interface VoteSummary {
+  upvotes: number;
+  downvotes: number;
+  score: number;
+  total: number;
+}
+
 export interface Thread {
   id: string;
   title: string;
@@ -47,12 +54,52 @@ export interface Thread {
   downvotes?: number;
   voteScore?: number;
   currentUserVote?: number;
-  voteStats?: {
-    upvotes: number;
-    downvotes: number;
-    score: number;
-    total: number;
+  voteStats?: VoteSummary;
+}
+
+export interface PostAuthor {
+  id: string;
+  username: string;
+  email?: string;
+  avatar?: string | null;
+  role?: UserRole;
+}
+
+export interface PostThread {
+  id: string;
+  title: string;
+  slug: string;
+  isLocked?: boolean;
+}
+
+export interface Post {
+  id: string;
+  content: string;
+  authorId: string;
+  threadId: string;
+  parentId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  author?: PostAuthor;
+  thread?: PostThread;
+  parent?: {
+    id: string;
+    content: string;
+  } | null;
+  children?: Post[];
+  _count?: {
+    votes?: number;
+    children?: number;
   };
+  upvotes?: number;
+  downvotes?: number;
+  voteScore?: number;
+  currentUserVote?: number;
+  voteStats?: VoteSummary;
+}
+
+export interface ThreadDetail extends Thread {
+  posts?: Post[];
 }
 
 export interface PaginationMeta {
@@ -76,4 +123,13 @@ export interface ThreadQueryParams {
   search?: string;
   authorId?: string;
   isPinned?: boolean;
+}
+
+export interface PostQueryParams {
+  threadId?: string;
+  page?: number;
+  limit?: number;
+  parentId?: string;
+  authorId?: string;
+  sort?: "newest" | "oldest";
 }

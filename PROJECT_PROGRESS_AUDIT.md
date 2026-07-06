@@ -2125,3 +2125,164 @@ Fail:
 1. Phase 3C: implement Thread detail page dùng `GET /threads/:id`, posts/replies và currentUserVote.
 2. Phase 3D: thêm Create Thread UI protected bằng auth.
 3. Sau đó mới làm Vote UI và Reply form để hoàn thiện luồng forum thật.
+
+## Phase 3C Frontend Thread Detail Result
+
+### File đã sửa/thêm
+
+- `frontend/src/types/forum.ts`
+- `frontend/src/services/threadService.ts`
+- `frontend/src/services/postService.ts`
+- `frontend/src/pages/ThreadDetailPage.tsx`
+- `frontend/src/router/index.tsx`
+- `PROJECT_PROGRESS_AUDIT.md`
+
+Không sửa backend code trong Phase 3C.
+Không commit `.env.local`.
+Không thêm Create Thread, Reply form, Vote action, Edit/Delete UI.
+
+### Route `/threads/:id`
+
+Đã thêm route trong `frontend/src/router/index.tsx`:
+
+- `/threads/:id` -> `ThreadDetailPage`
+
+Các link từ HomePage/ThreadsPage đã dùng sẵn dạng `/threads/:id`, nên route mới mở đúng detail page.
+
+### Thread detail API
+
+Cập nhật `frontend/src/services/threadService.ts`:
+
+- `threadService.getThreadById(id)` gọi `GET /threads/:id`.
+
+`ThreadDetailPage` đọc `id` từ `useParams()` và gọi API thật.
+
+### Posts/replies API
+
+Tạo `frontend/src/services/postService.ts`:
+
+- `postService.getPosts(params)` gọi `GET /posts`.
+
+Thread detail page gọi:
+
+- `GET /posts?threadId=<id>&page=1&limit=100&sort=oldest`
+
+Phase này chỉ đọc dữ liệu, không thêm create/update/delete post.
+
+### Types
+
+Cập nhật `frontend/src/types/forum.ts` thêm:
+
+- `VoteSummary`
+- `ThreadDetail`
+- `Post`
+- `PostAuthor`
+- `PostThread`
+- `PostQueryParams`
+
+Author type không chứa password.
+Types map theo backend response hiện có: author/thread public info, `_count`, `upvotes`, `downvotes`, `voteScore`, `currentUserVote`, `voteStats`.
+
+### ThreadDetailPage
+
+Tạo `frontend/src/pages/ThreadDetailPage.tsx`.
+
+Hiển thị thread:
+
+- title
+- category
+- author
+- createdAt
+- posts count
+- viewCount
+- locked/pinned state nếu có
+- content
+- voteScore read-only
+- upvotes/downvotes read-only
+- currentUserVote read-only
+
+Hiển thị posts:
+
+- content
+- author
+- createdAt
+- voteScore read-only
+- upvotes/downvotes read-only
+- currentUserVote read-only
+
+Không có nút vote/reply/edit/delete action trong Phase 3C.
+
+### Nested replies
+
+Backend `GET /posts` trả flat list có `parentId`.
+Frontend dựng cây replies trong `ThreadDetailPage` bằng `parentId`:
+
+- Post không có `parentId` hoặc parent không có trong page hiện tại -> root post.
+- Post có `parentId` khớp post khác -> render lồng dưới parent.
+- Nested replies render recursive với left border và indent nhẹ.
+
+Giới hạn hiện tại: chỉ dựng từ tối đa 100 posts đầu tiên theo query Phase 3C.
+
+### Loading/error/empty state
+
+Đã có:
+
+- Loading state khi đang gọi thread/posts API.
+- Error state khi API lỗi.
+- Empty state khi không có thread hoặc không có posts.
+- Back link về `/threads`.
+
+### Optional auth interaction
+
+API client Phase 3A tự gắn Bearer token nếu có `forum_access_token`.
+Vì read endpoints backend có optional auth:
+
+- Không login vẫn xem detail được.
+- Có login thì backend có thể trả `currentUserVote` đúng nếu user đã vote trước đó.
+- Phase 3C chỉ hiển thị read-only, chưa làm vote action.
+
+### Manual smoke test
+
+Đã chạy backend local tạm trên `http://localhost:3001` và frontend Vite tạm trên `http://127.0.0.1:5173`.
+
+Kết quả:
+
+- `GET /api/threads?page=1&limit=20`: PASS, lấy được thread seed.
+- `GET /api/threads/:id`: PASS, title `Welcome to Forum Microservices`.
+- Thread detail có `voteScore`: PASS.
+- Thread detail anonymous có `currentUserVote = 0`: PASS.
+- `GET /api/posts?threadId=<id>&page=1&limit=100&sort=oldest`: PASS, trả 2 posts.
+- Post đầu tiên có `voteScore`: PASS.
+- `GET http://127.0.0.1:5173/threads/<id>`: PASS, status 200.
+
+Sau smoke test đã tắt backend/frontend server tạm và xóa log tạm.
+
+### Lệnh verify frontend
+
+Pass:
+
+- `npm ci`
+- `npm run build`
+- `npm run lint`
+
+Ghi chú:
+
+- `npm ci` vẫn báo 13 vulnerabilities và deprecated `heroicons-react` từ dependency tree hiện tại.
+- `npm run build` vẫn có Node deprecation warning `DEP0205` từ toolchain, build pass.
+
+Fail:
+
+- Không còn lệnh frontend nào fail.
+
+### Rủi ro còn lại
+
+- Thread detail đang fetch posts `limit=100`; thread dài cần pagination hoặc lazy loading ở phase sau.
+- Nested replies dựng từ page hiện tại, nếu parent/child nằm ngoài 100 posts đầu thì cây có thể chưa đầy đủ.
+- `/threads/:id` hiện read-only; Reply form, Vote action, Edit/Delete sẽ làm ở phase sau.
+- UI chưa render rich text/markdown; content đang hiển thị plain text với line breaks.
+
+### Bước tiếp theo đề xuất
+
+1. Phase 3D: thêm Reply form protected bằng auth và refresh posts sau khi reply.
+2. Phase 3E: thêm Vote UI cho thread/post, dùng API votes đã có.
+3. Sau đó thêm Create Thread UI và protected route nếu cần.

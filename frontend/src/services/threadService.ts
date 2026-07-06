@@ -1,5 +1,10 @@
 import { apiClient } from "./apiClient";
-import type { PaginatedResponse, Thread, ThreadQueryParams } from "../types/forum";
+import type {
+  PaginatedResponse,
+  Thread,
+  ThreadDetail,
+  ThreadQueryParams,
+} from "../types/forum";
 
 function buildThreadQuery(params: ThreadQueryParams = {}) {
   const query = new URLSearchParams();
@@ -19,6 +24,11 @@ export const threadService = {
     const response = await apiClient.get<PaginatedResponse<Thread>>(
       `/threads${query ? `?${query}` : ""}`
     );
+    return response.data;
+  },
+
+  async getThreadById(id: string) {
+    const response = await apiClient.get<ThreadDetail>(`/threads/${id}`);
     return response.data;
   },
 };
