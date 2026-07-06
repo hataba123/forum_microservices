@@ -937,3 +937,154 @@ Migration/seed:
 2. Apply baseline migration và chạy `npm run seed` hai lần để xác nhận idempotent.
 3. Nếu DB đã ổn, xử lý tiếp schema vote thread/post trước khi implement vote đầy đủ.
 4. Phase 2B nên implement `threads.service.ts` bằng Prisma ở mức CRUD tối thiểu, chưa mở rộng realtime/media.
+## Phase 2A.1 Prisma Engine Fix Result
+
+Ngày thực hiện: 2026-07-06
+
+### Nguyên nhân thật của lỗi
+
+Nguyên nhân hiện tại là PostgreSQL local chưa chạy hoặc không nghe ở `localhost:5432`, nên Prisma không kết nối được database `forum_db`.
+
+Bằng chứng chính:
+
+- `Test-NetConnection localhost:5432`: `TcpTestSucceeded = False`.
+- `psql`: không có trong PATH.
+- `docker`: không có trong PATH, nên không thể dùng `docker compose` local hiện tại.
+- `npx prisma db execute --stdin --schema prisma/schema.prisma` trả lỗi rõ:
+
+```text
+Error: P1001
+Can't reach database server at `localhost:5432`
+Please make sure your database server is running at `localhost:5432`.
+```
+
+`npx prisma migrate status` và `npx prisma migrate dev --name init` vẫn trả lỗi mơ hồ:
+
+```text
+Error: Schema engine error:
+```
+
+Debug log không hiện lỗi permission/parsing SQL; lỗi kết nối được xác nhận qua TCP và `prisma db execute`.
+
+### Thông tin môi trường
+
+- Node.js: `v26.4.0`
+- npm: `11.17.0`
+- Prisma CLI: `5.22.0`
+- `@prisma/client`: `5.22.0`
+- Prisma CLI và client cùng version.
+- Node/npm/npx đang chạy từ `C:\Program Files\nodejs`.
+- DATABASE_URL đã được kiểm tra dạng masked: `postgresql://***:***@localhost:5432/forum_db`.
+- Prisma schema validate: PASS.
+- Prisma generate: PASS.
+
+### PostgreSQL local
+
+- Host yêu cầu: `localhost`
+- Port yêu cầu: `5432`
+- Database yêu cầu: `forum_db`
+- TCP check tới port 5432: FAIL.
+- Không kiểm tra được database tồn tại/quyền user bằng `psql` vì `psql` không có trong PATH.
+- Không tạo/drop database.
+- Không chạy lệnh phá dữ liệu.
+
+Đề xuất để user tự chuẩn bị DB local:
+
+```sql
+CREATE DATABASE forum_db;
+```
+
+Sau đó đảm bảo user trong `DATABASE_URL` có quyền create table/schema trên database local này. Không ghi credential thật vào repo hoặc audit.
+
+### Prisma cache/engine
+
+Đã thử bước an toàn:
+
+- Xóa `backend/node_modules/.prisma`.
+- Xóa `backend/node_modules/@prisma/engines`.
+- Chạy lại `npm ci`.
+- Chạy lại `npx prisma generate`.
+- Chạy lại `npx prisma migrate status`.
+
+Kết quả:
+
+- `npm ci`: PASS.
+- `npx prisma generate`: PASS.
+- `npx prisma migrate status`: vẫn FAIL vì database không reachable.
+
+### OneDrive/path
+
+Hiện chưa có bằng chứng lỗi do OneDrive/path/sync/permission. Prisma engine binary path tồn tại và `prisma validate/generate` chạy được.
+
+Không cần chuyển repo ra khỏi OneDrive ngay để xử lý lỗi hiện tại. Nếu sau khi PostgreSQL local chạy đúng mà migrate vẫn fail, bước test an toàn tiếp theo là copy repo sang thư mục không nằm trong OneDrive, ví dụ `C:\dev\forum_microservices`, vì OneDrive đôi khi gây file lock/sync delay với binary hoặc generated files.
+
+### Migration SQL
+
+Đã kiểm tra `backend/prisma/migrations/20260706000000_init/migration.sql`:
+
+- SQL là PostgreSQL.
+- Có `CREATE TYPE`, `CREATE TABLE`, unique index, foreign key theo thứ tự hợp lý.
+- Không có `CREATE EXTENSION`.
+- Không thấy yêu cầu quyền superuser.
+- Không thấy SQL lạ/không tương thích ở baseline.
+- Có FK `votes.targetId -> posts.id`, đúng với schema hiện tại nhưng vẫn là rủi ro nghiệp vụ vote thread/post đã ghi ở audit trước; không sửa schema trong Phase 2A.1 vì chưa chứng minh đây là nguyên nhân migrate fail.
+
+### File đã sửa
+
+- Chỉ cập nhật `PROJECT_PROGRESS_AUDIT.md`.
+- Không sửa code backend/frontend.
+- Không sửa schema Prisma.
+- Không sửa migration SQL.
+
+### Lệnh đã chạy và kết quả
+
+Pass:
+
+- `npm ci`
+- `node -v`
+- `npm -v`
+- `npx prisma -v`
+- `npm ls prisma @prisma/client`
+- `where node`
+- `where npm`
+- `where npx`
+- `npx prisma validate`
+- `npx prisma generate`
+- `npm run build`
+- `npm test`
+- `npx eslint "apps/**/*.ts" "libs/**/*.ts"`
+
+Fail:
+
+- `Test-NetConnection localhost -Port 5432`: FAIL.
+- `npx prisma db execute --stdin --schema prisma/schema.prisma`: FAIL với `P1001`.
+- `npx prisma migrate status`: FAIL với `Schema engine error:`.
+- `npx prisma migrate dev --name init`: FAIL với `Schema engine error:`.
+
+Không chạy:
+
+- `npm run seed`, vì migration chưa apply được.
+- Bất kỳ reset/drop database nào.
+
+### Migration/seed
+
+- Migration chưa apply được.
+- Seed chưa chạy được.
+- Baseline migration file và seed file vẫn giữ nguyên từ Phase 2A.
+
+### Bước tiếp theo đề xuất
+
+1. Cài/chạy PostgreSQL local hoặc đưa `DATABASE_URL` về một Postgres local đang chạy.
+2. Đảm bảo database `forum_db` tồn tại và user trong `DATABASE_URL` có quyền tạo table/schema.
+3. Chạy lại:
+
+```powershell
+cd backend
+npx prisma db execute --stdin --schema prisma/schema.prisma
+npx prisma migrate status
+npx prisma migrate dev --name init
+npm run seed
+npm run seed
+```
+
+4. Nếu DB đã reachable nhưng migrate vẫn fail, thử Node LTS hoặc copy repo ra khỏi OneDrive để loại trừ runtime/path issue.
