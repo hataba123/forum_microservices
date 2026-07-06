@@ -1,5 +1,10 @@
 import { apiClient } from "./apiClient";
-import type { PaginatedResponse, Post, PostQueryParams } from "../types/forum";
+import type {
+  CreatePostRequest,
+  PaginatedResponse,
+  Post,
+  PostQueryParams,
+} from "../types/forum";
 
 function buildPostQuery(params: PostQueryParams = {}) {
   const query = new URLSearchParams();
@@ -19,6 +24,11 @@ export const postService = {
     const response = await apiClient.get<PaginatedResponse<Post>>(
       `/posts${query ? `?${query}` : ""}`
     );
+    return response.data;
+  },
+
+  async createPost(input: CreatePostRequest) {
+    const response = await apiClient.post<Post>("/posts", input);
     return response.data;
   },
 };

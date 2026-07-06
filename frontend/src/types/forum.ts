@@ -133,3 +133,9 @@ export interface PostQueryParams {
   authorId?: string;
   sort?: "newest" | "oldest";
 }
+
+export interface CreatePostRequest {
+  threadId: string;
+  content: string;
+  parentId?: string;
+}

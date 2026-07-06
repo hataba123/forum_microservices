@@ -2286,3 +2286,146 @@ Fail:
 1. Phase 3D: thêm Reply form protected bằng auth và refresh posts sau khi reply.
 2. Phase 3E: thêm Vote UI cho thread/post, dùng API votes đã có.
 3. Sau đó thêm Create Thread UI và protected route nếu cần.
+
+## Phase 3D Frontend Reply Form Result
+
+### File đã sửa/thêm
+
+- `frontend/src/types/forum.ts`
+- `frontend/src/services/postService.ts`
+- `frontend/src/pages/ThreadDetailPage.tsx`
+- `PROJECT_PROGRESS_AUDIT.md`
+
+Không sửa backend code trong Phase 3D.
+Không commit `.env.local`.
+Không thêm Vote UI, Create Thread UI, Edit/Delete UI.
+
+### postService.createPost
+
+Cập nhật `frontend/src/services/postService.ts` thêm:
+
+- `postService.createPost(input)` gọi `POST /posts`.
+
+Request body theo backend:
+
+- `threadId`
+- `content`
+- `parentId?`
+
+API client tự gắn `Authorization: Bearer <forum_access_token>` nếu user đã login, không hard-code token.
+
+### Types
+
+Cập nhật `frontend/src/types/forum.ts` thêm:
+
+- `CreatePostRequest`
+
+`Post` type hiện đã có các field cần dùng cho reply UI:
+
+- `id`
+- `content`
+- `threadId`
+- `parentId`
+- `author`
+- `createdAt`
+- `voteScore`
+- `currentUserVote`
+
+Author type không chứa password.
+
+### Reply form chính
+
+Cập nhật `frontend/src/pages/ThreadDetailPage.tsx`.
+
+Form chính hoạt động như sau:
+
+- Nếu chưa login: hiển thị message cần login để reply, có link Register và nhắc dùng nút Log in trên Header.
+- Nếu đã login và thread không locked: hiển thị textarea + Submit reply.
+- Trim content trước khi submit.
+- Disable button khi content rỗng/toàn khoảng trắng hoặc đang submit.
+- Có loading state khi submit.
+- Có error state nếu backend trả lỗi.
+- Submit thành công thì clear textarea, reload thread/posts, hiển thị success message.
+- Không reload toàn trang.
+
+### Nested reply
+
+Mỗi post/reply item có nút `Reply` khi user đã login và thread không locked.
+
+- Click `Reply` mở form nhỏ dưới post đó.
+- Submit gọi `POST /posts` với `parentId = post.id`.
+- Submit thành công thì clear form, đóng form nested, reload thread/posts.
+- Nested replies vẫn render bằng cây `parentId` như Phase 3C.
+- Chỉ có một nested reply form đang mở tại một thời điểm để giữ UI đơn giản.
+
+### Chưa login
+
+- Không thấy textarea submit chính.
+- Không submit được reply.
+- Dưới từng post hiển thị gợi ý `Log in to reply.` thay vì nút submit.
+
+### Login rồi submit
+
+- API client dùng token trong localStorage key `forum_access_token`.
+- Backend `JwtAuthGuard` xử lý create post.
+- Sau submit frontend reload dữ liệu bằng:
+  - `GET /threads/:id`
+  - `GET /posts?threadId=<id>&page=1&limit=100&sort=oldest`
+
+### Locked thread
+
+Nếu `thread.isLocked = true`:
+
+- Frontend disable reply cho tất cả user để đơn giản và an toàn.
+- Hiển thị message `This thread is locked. Replies are disabled.`
+
+Backend hiện cho ADMIN/MODERATOR reply vào thread locked, nhưng Phase 3D chưa làm phân nhánh UI theo role cho locked thread. Có thể mở rộng sau nếu cần.
+
+### Manual smoke test
+
+Đã chạy backend local tạm trên `http://localhost:3001` và frontend Vite tạm trên `http://127.0.0.1:5173`.
+
+Kết quả:
+
+- Login `user@example.com`: PASS.
+- Lấy thread seed qua `GET /api/threads?page=1&limit=20`: PASS.
+- Tạo main reply qua `POST /api/posts`: PASS.
+- Tạo nested reply qua `POST /api/posts` với `parentId`: PASS.
+- Reload posts qua `GET /api/posts?threadId=<id>&page=1&limit=100&sort=oldest`: PASS.
+- Main reply xuất hiện sau reload: PASS.
+- Nested reply có `parentId` đúng main reply: PASS.
+- Route frontend `GET /threads/<id>`: PASS, status 200.
+
+Ghi chú: smoke test có tạo thêm 1 main reply và 1 nested reply trong DB local dev.
+
+Sau smoke test đã tắt backend/frontend server tạm và xóa log tạm.
+
+### Lệnh verify frontend
+
+Pass:
+
+- `npm ci`
+- `npm run build`
+- `npm run lint`
+
+Ghi chú:
+
+- `npm ci` vẫn báo 13 vulnerabilities và deprecated `heroicons-react` từ dependency tree hiện tại.
+- `npm run build` vẫn có Node deprecation warning `DEP0205` từ toolchain, build pass.
+
+Fail:
+
+- Không còn lệnh frontend nào fail.
+
+### Rủi ro còn lại
+
+- Thread detail vẫn reload tối đa 100 posts sau submit; thread dài cần pagination/lazy loading ở phase sau.
+- Locked thread UI disable reply cho tất cả user; nếu cần admin/mod reply trong locked thread thì cần bổ sung role-aware UI.
+- Chưa có optimistic append; reload chắc hơn nhưng tốn thêm request.
+- Chưa có Vote UI, Edit/Delete UI, Create Thread UI.
+
+### Bước tiếp theo đề xuất
+
+1. Phase 3E: thêm Vote UI cho thread/post, dùng backend votes API đã có.
+2. Phase 3F: thêm Create Thread UI protected bằng auth.
+3. Sau đó cân nhắc pagination/lazy loading posts cho thread dài.
