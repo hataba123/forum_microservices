@@ -1088,3 +1088,87 @@ npm run seed
 ```
 
 4. Nếu DB đã reachable nhưng migrate vẫn fail, thử Node LTS hoặc copy repo ra khỏi OneDrive để loại trừ runtime/path issue.
+## Phase 2A.1 Prisma Migration Apply Result
+
+Ngày thực hiện: 2026-07-06
+
+### DATABASE_URL local dev
+
+- `backend/.env` đã được kiểm tra và cập nhật local để trỏ PostgreSQL dev.
+- DATABASE_URL masked: `postgresql://***:***@localhost:5432/forum_db?schema=public`.
+- Host: `localhost`
+- Port: `5432`
+- Database: `forum_db`
+- Password không được ghi vào audit.
+- Không commit `.env` vì file chứa credential local.
+- Không cần đổi `localhost` sang `127.0.0.1`; kết nối qua `localhost` đã pass.
+
+### Kết quả migration
+
+- `Test-NetConnection localhost -Port 5432`: PASS.
+- `npx prisma migrate status` đã connect được DB và báo migration pending.
+- Lần apply đầu tiên fail với:
+
+```text
+Error: P3006
+Migration `20260706000000_init` failed to apply cleanly to the shadow database.
+ERROR: syntax error at or near "﻿"
+```
+
+- Nguyên nhân: `migration.sql` có UTF-8 BOM ở đầu file do lần tạo migration trước đó dùng PowerShell `Out-File -Encoding utf8`.
+- Đã sửa tối thiểu `backend/prisma/migrations/20260706000000_init/migration.sql` bằng cách lưu lại UTF-8 không BOM.
+- Byte đầu file sau sửa: `2D 2D 20`, tương ứng comment SQL `-- `.
+- Sau khi sửa BOM, `npx prisma migrate dev --name init`: PASS.
+- `npx prisma migrate status`: PASS, database schema up to date.
+- Không dùng `prisma migrate reset`.
+- Không drop database.
+
+### Kết quả seed
+
+- `npm run seed`: PASS.
+- `npm run seed` lần 2: PASS.
+- Seed idempotent, không tạo trùng dữ liệu.
+- Smoke query sau seed lần 2:
+
+```json
+{"users":2,"categories":3,"threads":1,"posts":2,"seededUsers":2}
+```
+
+Seed dev account:
+
+- Admin: `admin@example.com` / `Admin@123456`
+- User: `user@example.com` / `User@123456`
+
+Đây là credential local/dev, không phải production secret.
+
+### Lệnh verify đã chạy
+
+Pass:
+
+- `npm ci`
+- `npx prisma validate`
+- `npx prisma generate`
+- `npx prisma migrate status`
+- `npx prisma migrate dev --name init`
+- `npm run seed`
+- `npm run seed` lần 2
+- `npm run build`
+- `npm test`
+- `npx eslint "apps/**/*.ts" "libs/**/*.ts"`
+
+Fail còn lại:
+
+- Không còn lệnh Phase 2A.1 nào fail sau khi sửa BOM migration.
+
+### File đã sửa
+
+- `backend/prisma/migrations/20260706000000_init/migration.sql`
+  - Chỉ đổi encoding để bỏ BOM, không thay đổi SQL nghiệp vụ.
+- `PROJECT_PROGRESS_AUDIT.md`
+  - Ghi kết quả apply migration/seed và verify.
+
+### Bước tiếp theo đề xuất
+
+1. Không commit `.env`; nên đưa credential local vào `.env.example` dạng placeholder hoặc hướng dẫn riêng nếu cần.
+2. Phase 2B có thể bắt đầu implement `threads.service.ts` bằng Prisma CRUD tối thiểu.
+3. Sau đó xử lý rủi ro schema `Vote.targetId` đang FK về `posts` trong khi `VoteType` có cả `THREAD`.
