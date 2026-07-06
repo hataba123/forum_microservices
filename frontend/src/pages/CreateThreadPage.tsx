@@ -176,6 +176,7 @@ export default function CreateThreadPage() {
               onChange={(event) => setCategoryId(event.target.value)}
               disabled={isLoadingCategories || isSubmitting}
               className="mt-1 w-full rounded-xs border border-gray-300 bg-white px-3 py-2 text-sm disabled:opacity-60"
+              data-testid="thread-category-select"
             >
               {isLoadingCategories ? (
                 <option value="">Loading categories...</option>
@@ -206,6 +207,7 @@ export default function CreateThreadPage() {
               disabled={isSubmitting}
               className="mt-1 w-full rounded-xs border border-gray-300 px-3 py-2 text-sm disabled:opacity-60"
               placeholder="Thread title"
+              data-testid="thread-title-input"
             />
           </div>
 
@@ -223,6 +225,7 @@ export default function CreateThreadPage() {
               disabled={isSubmitting}
               className="mt-1 min-h-40 w-full rounded-xs border border-gray-300 px-3 py-2 text-sm disabled:opacity-60"
               placeholder="Write the first post..."
+              data-testid="thread-content-input"
             />
           </div>
 
@@ -231,6 +234,7 @@ export default function CreateThreadPage() {
               type="submit"
               disabled={!isFormValid || isLoadingCategories || isSubmitting}
               className="rounded-xs bg-blue-700 px-4 py-2 text-sm text-white disabled:opacity-50"
+              data-testid="thread-submit"
             >
               {isSubmitting ? "Creating..." : "Create Thread"}
             </button>

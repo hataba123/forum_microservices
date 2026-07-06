@@ -60,6 +60,7 @@ export default function ThreadsPage() {
           <Link
             to="/threads/new"
             className="rounded-xs bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800"
+            data-testid="create-thread-link"
           >
             Create Thread
           </Link>

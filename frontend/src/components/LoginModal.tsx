@@ -51,6 +51,7 @@ const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
     <div
       onClick={handleBackdropClick}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm"
+      data-testid="login-modal"
     >
       <div className="bg-gray-100 p-3 rounded shadow-lg max-w-3xl w-full relative">
         <button
@@ -73,6 +74,7 @@ const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
               onChange={(event) => setEmail(event.target.value)}
               className="flex-1 border p-2 rounded"
               autoComplete="email"
+              data-testid="login-email"
             />
           </div>
 
@@ -86,6 +88,7 @@ const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
               onChange={(event) => setPassword(event.target.value)}
               className="flex-1 border p-2 rounded"
               autoComplete="current-password"
+              data-testid="login-password"
             />
           </div>
 
@@ -108,6 +111,7 @@ const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
               type="submit"
               disabled={isSubmitting}
               className="flex items-center gap-2 text-white py-2 px-4 hover:bg-blue-700 disabled:opacity-60"
+              data-testid="login-submit"
             >
               <LockClosedIcon className="w-4 h-4" />
               {isSubmitting ? "Logging in..." : "Log in"}

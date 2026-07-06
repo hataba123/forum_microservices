@@ -7,6 +7,7 @@ interface VoteButtonsProps {
   currentUserVote: number;
   disabled?: boolean;
   isLoading?: boolean;
+  testIdPrefix?: string;
   onVote: (value: VoteValue) => void;
 }
 
@@ -17,6 +18,7 @@ export default function VoteButtons({
   currentUserVote,
   disabled = false,
   isLoading = false,
+  testIdPrefix,
   onVote,
 }: VoteButtonsProps) {
   const baseButtonClass =
@@ -34,6 +36,7 @@ export default function VoteButtons({
             : "border-gray-200 bg-gray-100 text-gray-700"
         }`}
         title="Upvote"
+        data-testid={testIdPrefix ? `${testIdPrefix}-upvote` : undefined}
       >
         Up {upvotes}
       </button>
@@ -50,10 +53,14 @@ export default function VoteButtons({
             : "border-gray-200 bg-gray-100 text-gray-700"
         }`}
         title="Downvote"
+        data-testid={testIdPrefix ? `${testIdPrefix}-downvote` : undefined}
       >
         Down {downvotes}
       </button>
-      <span className="rounded-xs bg-blue-50 px-2 py-1 text-blue-700">
+      <span
+        className="rounded-xs bg-blue-50 px-2 py-1 text-blue-700"
+        data-testid={testIdPrefix ? `${testIdPrefix}-current-vote` : undefined}
+      >
         Your vote {currentUserVote}
       </span>
     </div>

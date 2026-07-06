@@ -109,6 +109,7 @@ function PostCard({
       className={`rounded-xs border bg-white p-4 shadow-sm ${
         depth > 0 ? "ml-4 border-l-4 border-l-blue-200" : ""
       }`}
+      data-testid="post-card"
     >
       <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
         <div>
@@ -125,6 +126,7 @@ function PostCard({
           currentUserVote={getCurrentUserVote(post)}
           disabled={!canVote}
           isLoading={voteLoadingTarget === postVoteTarget}
+          testIdPrefix="post"
           onVote={(value) => void onVotePost(post.id, value)}
         />
       </div>
@@ -139,6 +141,7 @@ function PostCard({
             type="button"
             onClick={() => onOpenReply(post.id)}
             className="text-sm text-blue-700 hover:underline"
+            data-testid="post-reply-button"
           >
             Reply
           </button>
@@ -154,6 +157,7 @@ function PostCard({
             onChange={(event) => onNestedContentChange(event.target.value)}
             className="min-h-24 w-full rounded-xs border p-2 text-sm"
             placeholder="Write a nested reply..."
+            data-testid="nested-reply-input"
           />
           {nestedError ? (
             <div className="mt-2 text-sm text-red-600">{nestedError}</div>
@@ -164,6 +168,7 @@ function PostCard({
               disabled={!nestedContent.trim() || isSubmittingNested}
               onClick={() => void onSubmitNested(post.id)}
               className="rounded-xs bg-blue-700 px-3 py-1 text-sm text-white disabled:opacity-50"
+              data-testid="nested-reply-submit"
             >
               {isSubmittingNested ? "Submitting..." : "Submit reply"}
             </button>
@@ -475,6 +480,7 @@ export default function ThreadDetailPage() {
                 currentUserVote={getCurrentUserVote(thread)}
                 disabled={!canVote}
                 isLoading={voteLoadingTarget === `thread:${thread.id}`}
+                testIdPrefix="thread"
                 onVote={(value) => void handleVoteThread(value)}
               />
               {!isAuthenticated ? (
@@ -514,6 +520,7 @@ export default function ThreadDetailPage() {
                     onChange={(event) => setMainReplyContent(event.target.value)}
                     className="mt-3 min-h-28 w-full rounded-xs border p-2 text-sm"
                     placeholder="Write your reply..."
+                    data-testid="main-reply-input"
                   />
                   {mainReplyError ? (
                     <div className="mt-2 text-sm text-red-600">{mainReplyError}</div>
@@ -523,6 +530,7 @@ export default function ThreadDetailPage() {
                     disabled={!mainReplyContent.trim() || isSubmittingMain}
                     onClick={() => void handleSubmitMainReply()}
                     className="mt-3 rounded-xs bg-blue-700 px-4 py-2 text-sm text-white disabled:opacity-50"
+                    data-testid="main-reply-submit"
                   >
                     {isSubmittingMain ? "Submitting..." : "Submit reply"}
                   </button>

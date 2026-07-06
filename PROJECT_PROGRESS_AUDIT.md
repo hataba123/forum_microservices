@@ -2791,3 +2791,162 @@ Fail:
 1. Phase 3H: thêm browser E2E tối thiểu bằng Playwright cho flow login -> create thread -> reply -> vote nếu muốn kiểm tra UI thật.
 2. Thêm tùy chọn cleanup smoke data chỉ khi có endpoint delete/permission ổn định và được yêu cầu rõ.
 3. Tách phase xử lý dependency vulnerabilities để tránh phá scope frontend/backend hiện tại.
+
+## Phase 3H Browser E2E Result
+
+### File đã sửa/thêm
+
+- `frontend/package.json`: thêm `@playwright/test`, script `test:e2e` và `test:e2e:headed`.
+- `frontend/package-lock.json`: cập nhật lockfile sau khi thêm Playwright.
+- `frontend/playwright.config.ts`: cấu hình Playwright tối thiểu, `testDir: ./e2e`, baseURL từ `E2E_BASE_URL` hoặc fallback `http://localhost:5173`, chạy Chromium.
+- `frontend/e2e/forum-flow.spec.ts`: thêm browser E2E flow chính.
+- `frontend/src/components/Header.tsx`: thêm `data-testid="login-button"`.
+- `frontend/src/components/LoginModal.tsx`: thêm test id cho login modal/email/password/submit.
+- `frontend/src/components/VoteButtons.tsx`: thêm prop optional `testIdPrefix` để sinh selector vote ổn định.
+- `frontend/src/pages/CreateThreadPage.tsx`: thêm test id cho category/title/content/submit.
+- `frontend/src/pages/ThreadsPage.tsx`: thêm test id cho create thread link.
+- `frontend/src/pages/ThreadDetailPage.tsx`: thêm test id cho post card, reply/nested reply, thread/post vote.
+- `PROJECT_PROGRESS_AUDIT.md`: cập nhật kết quả Phase 3H.
+
+Không sửa backend business logic. Không làm Edit/Delete UI. Không commit `.env.local`.
+
+### Playwright config
+
+Playwright cấu hình ở:
+
+- `frontend/playwright.config.ts`
+
+Cấu hình chính:
+
+- `testDir: ./e2e`
+- `baseURL: process.env.E2E_BASE_URL || "http://localhost:5173"`
+- browser project: Chromium / Desktop Chrome
+- trace: `on-first-retry`
+
+Đã chạy:
+
+```powershell
+cd frontend
+npx playwright install chromium
+```
+
+### E2E test file
+
+Test đặt ở:
+
+- `frontend/e2e/forum-flow.spec.ts`
+
+Flow browser E2E kiểm tra:
+
+1. Mở app `/`.
+2. Click login trên Header.
+3. Login bằng seed user `user@example.com`.
+4. Vào `/threads/new`.
+5. Đợi category select load.
+6. Tạo thread mới với title/content timestamp.
+7. Xác nhận redirect sang `/threads/:id`.
+8. Xác nhận thấy title và first post.
+9. Tạo main reply.
+10. Tạo nested reply dưới main reply.
+11. Upvote thread và xác nhận `Your vote 1`.
+12. Upvote main reply post và xác nhận `Your vote 1`.
+
+### Data-testid đã thêm
+
+Đã thêm `data-testid` tối thiểu để test ổn định:
+
+- Login/Header: `login-button`, `login-modal`, `login-email`, `login-password`, `login-submit`.
+- Create thread: `create-thread-link`, `thread-category-select`, `thread-title-input`, `thread-content-input`, `thread-submit`.
+- Reply: `main-reply-input`, `main-reply-submit`, `post-card`, `post-reply-button`, `nested-reply-input`, `nested-reply-submit`.
+- Vote: `thread-upvote`, `thread-current-vote`, `post-upvote`, `post-current-vote`.
+
+Các test id này không đổi UI/behavior, chỉ giúp E2E tránh selector theo text/CSS mong manh.
+
+### Lệnh chạy E2E
+
+Yêu cầu backend/frontend đang chạy:
+
+```powershell
+cd frontend
+npm run test:e2e
+```
+
+Chạy headed nếu cần debug:
+
+```powershell
+cd frontend
+npm run test:e2e:headed
+```
+
+### Dữ liệu dev
+
+E2E có tạo dữ liệu DB local/dev:
+
+- 1 thread mới với title `E2E Thread <timestamp>`.
+- 1 first post qua backend create thread transaction.
+- 1 main reply.
+- 1 nested reply.
+- 1 vote thread.
+- 1 vote post.
+
+Test dùng timestamp để chạy lại nhiều lần không trùng. Không reset/drop/xóa database.
+
+### Kết quả E2E
+
+Đã chạy backend local trên `http://localhost:3001/api` và frontend Vite trên `http://localhost:5173`.
+
+Pass:
+
+- `npm run test:e2e`: 1 test passed trên Chromium.
+
+Trong lúc phát triển có 1 lỗi strict selector do first post xuất hiện hợp lệ ở cả thread content và post đầu tiên; đã sửa test dùng `.first()` cho assertion đó. Không còn fail sau khi sửa.
+
+### Lệnh verify frontend
+
+Pass:
+
+- `npm ci`
+- `npm run build`
+- `npm run lint`
+- `npm run test:e2e`
+
+Cảnh báo không chặn:
+
+- `npm ci` frontend vẫn báo 13 vulnerabilities và deprecated `heroicons-react` từ dependency tree hiện tại.
+- `npm run build` frontend vẫn có Node deprecation warning `DEP0205` từ toolchain, build pass.
+
+### Lệnh verify backend
+
+Pass:
+
+- `npm ci`
+- `npx prisma validate`
+- `npx prisma generate`
+- `npx prisma migrate status`
+- `npm run build`
+- `npm test`
+- `npx eslint "apps/**/*.ts" "libs/**/*.ts"`
+- `npm run smoke:forum`
+
+Ghi chú:
+
+- Khi backend server đang chạy, `npx prisma generate` từng gặp Windows `EPERM` do Prisma engine DLL đang bị process backend giữ lock. Sau khi tắt server tạm và chạy lại, `npx prisma generate` PASS.
+- `npx prisma migrate status` xác nhận DB local `forum_db` ở `localhost:5432` up to date với 2 migrations.
+- Backend `npm ci` vẫn báo 56 vulnerabilities trong dependency tree hiện tại.
+
+Fail:
+
+- Không còn lệnh Phase 3H nào fail.
+
+### Rủi ro còn lại
+
+- E2E hiện chỉ chạy Chromium, chưa chạy Firefox/WebKit/mobile viewport.
+- E2E giả định backend/frontend đã chạy sẵn; chưa cấu hình Playwright `webServer` auto-start để tránh tăng scope.
+- Test để lại dữ liệu dev sau mỗi lần chạy theo đúng yêu cầu không cleanup/reset DB.
+- Dependency vulnerabilities hiện tại chưa xử lý vì có thể cần phase nâng package riêng.
+
+### Bước tiếp theo đề xuất
+
+1. Phase sau có thể thêm Playwright `webServer` auto-start nếu muốn chạy E2E bằng một lệnh tự khởi động frontend.
+2. Thêm E2E viewport mobile cho Header/Login nếu cần phủ responsive flow.
+3. Tách phase xử lý dependency vulnerabilities và deprecated dependency.

@@ -137,6 +137,7 @@ export default function Header() {
                       onClick={() => setIsLoginOpen(true)}
                       disabled={isLoading}
                       className="text-white hover:bg-blue-500 px-3 py-2 rounded-md disabled:opacity-60"
+                      data-testid="login-button"
                     >
                       Log in
                     </button>
@@ -235,6 +236,7 @@ export default function Header() {
                     onClick={() => setIsLoginOpen(true)}
                     disabled={isLoading}
                     className="block w-full text-left px-3 py-2 rounded-md hover:bg-blue-500 text-white disabled:opacity-60"
+                    data-testid="login-button"
                   >
                     Log in
                   </button>
