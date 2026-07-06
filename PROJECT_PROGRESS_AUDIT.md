@@ -1969,3 +1969,159 @@ Chưa chạy browser manual test end-to-end vì backend local không đang chạ
 1. Phase 3B: tích hợp frontend Home/Thread list với backend categories/threads thật.
 2. Phase 3C: làm Thread detail dùng posts/replies/votes/currentUserVote.
 3. Thêm ProtectedRoute khi có Create Thread/Profile hoặc route cần login.
+
+## Phase 3B Frontend Forum Read Pages Result
+
+### File đã sửa/thêm
+
+- `frontend/src/types/forum.ts`
+- `frontend/src/services/categoryService.ts`
+- `frontend/src/services/threadService.ts`
+- `frontend/src/components/ForumBlock.tsx`
+- `frontend/src/pages/HomePage.tsx`
+- `frontend/src/pages/ThreadsPage.tsx`
+- `frontend/src/router/index.tsx`
+- `frontend/src/components/Header.tsx`
+- `PROJECT_PROGRESS_AUDIT.md`
+
+Không sửa backend code trong Phase 3B.
+Không commit `.env.local`.
+
+### HomePage trước khi sửa
+
+- `frontend/src/pages/HomePage.tsx` chứa `forumData` hard-code ngay trong file.
+- Các block forum, số thread/post và last post đều là dữ liệu tĩnh.
+- Sidebar Top Chủ đề cũng là hard-code.
+
+### HomePage sau khi sửa
+
+HomePage hiện gọi API thật khi load trang:
+
+- `GET /categories`
+- `GET /threads?page=1&limit=20`
+
+Dữ liệu threads được group theo category trả từ backend.
+Nếu có thread không map được category, UI đưa vào nhóm `Other Threads`.
+Sidebar Top Chủ đề lấy từ threads API thay vì hard-code.
+
+### Category service
+
+Tạo `frontend/src/services/categoryService.ts`.
+
+- `categoryService.getCategories()` gọi `GET /categories`.
+- Response type là `Category[]` theo backend Prisma category response.
+
+### Thread service
+
+Tạo `frontend/src/services/threadService.ts`.
+
+- `threadService.getThreads(params?)` gọi `GET /threads`.
+- Hỗ trợ params: `page`, `limit`, `categoryId`, `categorySlug`, `search`, `authorId`, `isPinned`.
+- Response type là `PaginatedResponse<Thread>`.
+
+### Types
+
+Tạo `frontend/src/types/forum.ts`.
+
+Có type:
+
+- `Category`
+- `Thread`
+- `ThreadAuthor`
+- `ThreadCategory`
+- `PaginationMeta`
+- `PaginatedResponse<T>`
+- `ThreadQueryParams`
+
+Author type không chứa password.
+
+### ForumBlock
+
+Cập nhật `frontend/src/components/ForumBlock.tsx`.
+
+- Export `ForumRow` type.
+- Hỗ trợ `href` để thread title link tới `/threads/:id`.
+- Có empty row `No threads yet.` khi category chưa có thread.
+- Giữ layout table cũ để tránh refactor UI lớn.
+
+### /threads page
+
+Đã tạo `frontend/src/pages/ThreadsPage.tsx` và thêm route `/threads` trong `frontend/src/router/index.tsx`.
+
+Trang `/threads`:
+
+- Gọi `GET /threads?page=<page>&limit=20`.
+- Hiển thị title, category, author, createdAt, posts count, voteScore, currentUserVote.
+- Có loading/error/empty state.
+- Có pagination Previous/Next đơn giản nếu backend trả nhiều page.
+- Thread item link tới `/threads/:id` để chuẩn bị cho Phase 3C, chưa implement detail page trong Phase 3B.
+
+### Header/routing
+
+- Desktop `Forums` link chuyển tới `/threads` cho nhất quán với mobile.
+- Logo/root vẫn mở HomePage.
+- Không thêm route ngoài `/threads`.
+
+### Loading/error/empty state
+
+Đã có:
+
+- HomePage loading state.
+- HomePage error state khi API lỗi.
+- HomePage empty state khi không có category/thread.
+- ForumBlock empty row cho category không có thread.
+- ThreadsPage loading/error/empty state.
+
+### Backend port/env
+
+- Backend code dùng `process.env.PORT || 3001`.
+- Local `backend/.env` hiện có `PORT=3001`.
+- `frontend/.env.example` vẫn giữ `VITE_API_BASE_URL=http://localhost:3000/api` theo Phase 3A/request.
+- Để manual test local với backend port thật, đã tạo `frontend/.env.local` với `VITE_API_BASE_URL=http://localhost:3001/api` nhưng không commit.
+
+### Manual smoke test
+
+Đã chạy backend local tạm trên `http://localhost:3001` và frontend Vite tạm trên `http://127.0.0.1:5173`.
+
+Backend API smoke:
+
+- `GET http://localhost:3001/api/categories`: PASS, trả 3 categories.
+- `GET http://localhost:3001/api/threads?page=1&limit=20`: PASS, trả 1 thread seed.
+- Thread seed có `voteScore`: PASS.
+
+Frontend route smoke:
+
+- `GET http://127.0.0.1:5173`: PASS, status 200.
+- `GET http://127.0.0.1:5173/threads`: PASS, status 200.
+
+Sau smoke test đã tắt backend/frontend server tạm và xóa log tạm.
+
+### Lệnh verify frontend
+
+Pass:
+
+- `npm ci`
+- `npm run build`
+- `npm run lint`
+
+Ghi chú:
+
+- `npm ci` vẫn báo 13 vulnerabilities và deprecated `heroicons-react` từ dependency tree hiện tại.
+- `npm run build` vẫn có Node deprecation warning `DEP0205` từ toolchain, build pass.
+
+Fail:
+
+- Không còn lệnh frontend nào fail.
+
+### Rủi ro còn lại
+
+- `frontend/.env.example` đang để port 3000 theo request, nhưng local backend repo hiện chạy port 3001. Dev local cần `.env.local` không commit nếu dùng port 3001.
+- `/threads/:id` link đã chuẩn bị nhưng detail page chưa implement theo đúng scope Phase 3B.
+- HomePage group thread theo category từ page đầu tiên `limit=20`; nếu dữ liệu lớn cần paging/filter category tốt hơn ở phase sau.
+- Chưa có search/filter UI cho ThreadList dù service đã hỗ trợ params backend.
+
+### Bước tiếp theo đề xuất
+
+1. Phase 3C: implement Thread detail page dùng `GET /threads/:id`, posts/replies và currentUserVote.
+2. Phase 3D: thêm Create Thread UI protected bằng auth.
+3. Sau đó mới làm Vote UI và Reply form để hoàn thiện luồng forum thật.

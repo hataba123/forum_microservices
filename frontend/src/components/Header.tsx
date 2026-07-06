@@ -62,7 +62,7 @@ export default function Header() {
                 <div className="hidden md:flex space-x-4">
                   {/* Forums link */}
                   <Link
-                    to="/"
+                    to="/threads"
                     className="text-white hover:bg-blue-500 px-3 py-2 rounded-md"
                   >
                     Forums

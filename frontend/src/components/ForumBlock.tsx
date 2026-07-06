@@ -1,16 +1,18 @@
 // src/components/ForumBlock.tsx
 import React from "react";
+import { Link } from "react-router-dom";
 
-interface Forum {
+export interface ForumRow {
   title: string;
   threads: number;
   posts: number;
   lastPost: string;
+  href?: string;
 }
 
 interface Props {
   category: string;
-  forums: Forum[];
+  forums: ForumRow[];
 }
 
 const ForumBlock: React.FC<Props> = ({ category, forums }) => {
@@ -29,18 +31,32 @@ const ForumBlock: React.FC<Props> = ({ category, forums }) => {
           </tr>
         </thead>
         <tbody>
-          {forums.map((forum, index) => (
-            <tr key={index} className="border-t hover:bg-gray-50">
-              <td className="px-4 py-2 font-medium text-blue-600">
-                {forum.title}
-              </td>
-              <td className="text-center">{forum.threads}</td>
-              <td className="text-center">{forum.posts}</td>
-              <td className="px-4 py-2 text-sm text-gray-500">
-                {forum.lastPost}
+          {forums.length === 0 ? (
+            <tr className="border-t">
+              <td className="px-4 py-3 text-gray-500" colSpan={4}>
+                No threads yet.
               </td>
             </tr>
-          ))}
+          ) : (
+            forums.map((forum, index) => (
+              <tr key={`${forum.title}-${index}`} className="border-t hover:bg-gray-50">
+                <td className="px-4 py-2 font-medium text-blue-600">
+                  {forum.href ? (
+                    <Link to={forum.href} className="hover:underline">
+                      {forum.title}
+                    </Link>
+                  ) : (
+                    forum.title
+                  )}
+                </td>
+                <td className="text-center">{forum.threads}</td>
+                <td className="text-center">{forum.posts}</td>
+                <td className="px-4 py-2 text-sm text-gray-500">
+                  {forum.lastPost}
+                </td>
+              </tr>
+            ))
+          )}
         </tbody>
       </table>
     </div>
