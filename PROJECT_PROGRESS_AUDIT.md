@@ -2667,3 +2667,127 @@ Fail:
 1. Phase 3G: thêm UI edit/delete thread/post theo quyền owner/admin/mod nếu cần.
 2. Thêm kiểm thử E2E frontend cho login -> create thread -> detail hiển thị first post.
 3. Rà soát dependency vulnerabilities ở một phase riêng vì có thể cần nâng package ngoài phạm vi minimal UI.
+
+## Phase 3G Forum Smoke Test Result
+
+### File đã sửa/thêm
+
+- `backend/scripts/smoke-forum-flow.js`: thêm smoke script Node gọi API thật cho flow forum chính.
+- `backend/package.json`: thêm script `smoke:forum` chạy `node scripts/smoke-forum-flow.js`.
+- `PROJECT_PROGRESS_AUDIT.md`: cập nhật kết quả Phase 3G.
+
+Không sửa frontend UI/backend business logic. Không thêm dependency mới. Không commit `.env.local`.
+
+### Smoke test kiểm tra flow nào
+
+`backend/scripts/smoke-forum-flow.js` kiểm tra các bước:
+
+1. Login seed user `user@example.com`.
+2. `GET /categories` và chọn category đầu tiên.
+3. `POST /threads` tạo thread mới với title/content có timestamp.
+4. `GET /threads/:id` xác nhận detail đúng title.
+5. `GET /posts?threadId=<id>&page=1&limit=100&sort=oldest` xác nhận có first post.
+6. `POST /posts` tạo main reply.
+7. `POST /posts` tạo nested reply với `parentId` là main reply.
+8. `POST /votes` upvote thread.
+9. `POST /votes` upvote main reply post.
+10. Đọc lại thread/posts bằng token, xác nhận main reply/nested reply tồn tại và `currentUserVote` đúng nếu backend trả field này.
+
+### API_BASE_URL
+
+Script dùng:
+
+- `process.env.API_BASE_URL` nếu được set.
+- Mặc định: `http://localhost:3001/api`.
+
+Có thể override smoke user bằng:
+
+- `SMOKE_USER_EMAIL`
+- `SMOKE_USER_PASSWORD`
+
+Không in token hoặc password trong output.
+
+### Dữ liệu dev
+
+Smoke test có tạo dữ liệu DB local/dev:
+
+- 1 thread mới.
+- 1 first post do backend tạo cùng thread.
+- 1 main reply.
+- 1 nested reply.
+- 1 vote thread.
+- 1 vote post.
+
+Dữ liệu dùng timestamp trong title/content để chạy lại nhiều lần không trùng. Script không drop/reset/xóa database.
+
+### Lệnh chạy smoke test
+
+```powershell
+cd backend
+npm run smoke:forum
+```
+
+### Kết quả smoke test
+
+Đã chạy với backend local `http://localhost:3001/api`.
+
+Pass:
+
+- Login user: PASS.
+- Load categories: PASS, 3 categories.
+- Create thread: PASS, tạo thread `cmr94fm0v000288sspddtzwqp`.
+- Get thread detail: PASS.
+- Get posts verify first post: PASS.
+- Create main reply: PASS, tạo post `cmr94fm5p000688ssw5i4lquc`.
+- Create nested reply: PASS, tạo post `cmr94fm6f000888sssh2135gs`.
+- Vote thread: PASS, score 1.
+- Vote main reply post: PASS, score 1.
+- Read back vote state: PASS.
+
+### Lệnh verify backend
+
+Pass:
+
+- `npm ci`
+- `npx prisma validate`
+- `npx prisma generate`
+- `npx prisma migrate status`
+- `npm run build`
+- `npm test`
+- `npx eslint "apps/**/*.ts" "libs/**/*.ts"`
+- `npm run smoke:forum`
+
+Cảnh báo không chặn:
+
+- `npm ci` backend vẫn báo 56 vulnerabilities trong dependency tree hiện tại.
+- `npx prisma migrate status` xác nhận PostgreSQL local `forum_db` ở `localhost:5432` up to date với 2 migrations.
+
+### Lệnh verify frontend
+
+Pass:
+
+- `npm ci`
+- `npm run build`
+- `npm run lint`
+
+Cảnh báo không chặn:
+
+- `npm ci` frontend vẫn báo 13 vulnerabilities và deprecated `heroicons-react` từ dependency tree hiện tại.
+- `npm run build` frontend vẫn có Node deprecation warning `DEP0205` từ toolchain, build pass.
+
+Fail:
+
+- Không còn lệnh Phase 3G nào fail.
+
+### Rủi ro còn lại
+
+- Đây là API smoke test, chưa phải browser automation; chưa kiểm tra click/typing thật trên UI.
+- Smoke test để lại dữ liệu dev sau mỗi lần chạy theo đúng yêu cầu không delete/reset DB.
+- Vote test dùng thread/post mới tạo nên idempotent theo timestamp, nhưng DB dev sẽ tăng dữ liệu theo số lần chạy.
+- Dependency vulnerabilities hiện tại chưa xử lý vì có thể cần phase nâng package riêng.
+
+### Bước tiếp theo đề xuất
+
+1. Phase 3H: thêm browser E2E tối thiểu bằng Playwright cho flow login -> create thread -> reply -> vote nếu muốn kiểm tra UI thật.
+2. Thêm tùy chọn cleanup smoke data chỉ khi có endpoint delete/permission ổn định và được yêu cầu rõ.
+3. Tách phase xử lý dependency vulnerabilities để tránh phá scope frontend/backend hiện tại.
