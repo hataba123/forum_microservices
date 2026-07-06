@@ -83,12 +83,17 @@ export default function ThreadsPage() {
         {!isLoading && !error && threads.length > 0 ? (
           <div className="divide-y">
             {threads.map((thread) => (
-              <div key={thread.id} className="p-4 hover:bg-gray-50">
+              <div
+                key={thread.id}
+                className="p-4 hover:bg-gray-50"
+                data-testid="thread-list-item"
+              >
                 <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                   <div>
                     <Link
                       to={`/threads/${thread.id}`}
                       className="font-semibold text-blue-700 hover:underline"
+                      data-testid="thread-detail-link"
                     >
                       {thread.title}
                     </Link>

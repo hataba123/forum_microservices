@@ -1,7 +1,12 @@
 import { expect, test } from "@playwright/test";
+import { ensureBackendReachable } from "./helpers/backendHealth";
 
 const userEmail = process.env.E2E_USER_EMAIL || "user@example.com";
 const userPassword = process.env.E2E_USER_PASSWORD || "User@123456";
+
+test.beforeAll(async () => {
+  await ensureBackendReachable();
+});
 
 test("user can create a thread, reply, nested reply, and vote", async ({
   page,

@@ -2950,3 +2950,186 @@ Fail:
 1. Phase sau có thể thêm Playwright `webServer` auto-start nếu muốn chạy E2E bằng một lệnh tự khởi động frontend.
 2. Thêm E2E viewport mobile cho Header/Login nếu cần phủ responsive flow.
 3. Tách phase xử lý dependency vulnerabilities và deprecated dependency.
+
+## Phase 3H.1 E2E Stability Result
+
+### File đã sửa/thêm
+
+- `frontend/playwright.config.ts`: thêm `webServer` auto-start frontend, tách project desktop/mobile, thêm mobile viewport.
+- `frontend/package.json`: thêm script `test:e2e:mobile`.
+- `frontend/e2e/helpers/backendHealth.ts`: thêm backend health/precheck helper.
+- `frontend/e2e/forum-flow.spec.ts`: gọi backend precheck trước desktop full flow.
+- `frontend/e2e/mobile-smoke.spec.ts`: thêm mobile Chromium smoke test tối thiểu.
+- `frontend/src/pages/ThreadsPage.tsx`: thêm `data-testid` cho item/link thread để mobile smoke chọn detail ổn định.
+- `PROJECT_PROGRESS_AUDIT.md`: cập nhật kết quả Phase 3H.1.
+
+Không sửa backend business logic. Không reset/drop database. Không commit `.env.local`.
+
+### Playwright webServer
+
+Đã cấu hình auto-start frontend trong `frontend/playwright.config.ts`:
+
+```ts
+webServer: {
+  command: "npm run dev -- --host 127.0.0.1",
+  url: "http://127.0.0.1:5173",
+  reuseExistingServer: true,
+  timeout: 60_000,
+}
+```
+
+`baseURL` vẫn lấy từ `E2E_BASE_URL`, fallback `http://localhost:5173`.
+
+Backend không auto-start trong phase này vì cần PostgreSQL local và env backend đúng; thay vào đó dùng precheck rõ ràng.
+
+### Backend precheck
+
+Precheck đặt ở:
+
+- `frontend/e2e/helpers/backendHealth.ts`
+
+Cách hoạt động:
+
+- API base URL lấy từ `E2E_API_BASE_URL`, hoặc `VITE_API_BASE_URL`, fallback `http://localhost:3001/api`.
+- Gọi `GET <apiBaseUrl>/categories` với timeout 5 giây.
+- Nếu backend không reachable hoặc trả non-2xx, throw error rõ ràng.
+- Không in secret/token/password.
+- Không reset/drop DB.
+
+Khi backend chưa chạy, `npm run test:e2e` fail nhanh với message:
+
+```text
+Backend API is not reachable at http://localhost:3001/api. Please start PostgreSQL and run backend with `cd backend && npm run start:dev`. Detail: fetch failed
+```
+
+### Mobile E2E
+
+Đã thêm project `mobile-chromium` trong `frontend/playwright.config.ts`:
+
+- viewport: `390x844`
+- `isMobile: true`
+- `hasTouch: true`
+- chỉ chạy `mobile-smoke.spec.ts`
+
+Test mobile đặt ở:
+
+- `frontend/e2e/mobile-smoke.spec.ts`
+
+Mobile smoke kiểm tra:
+
+1. Mở HomePage.
+2. Vào `/threads`.
+3. Xác nhận heading `Threads` render.
+4. Click thread đầu tiên qua `data-testid="thread-detail-link"`.
+5. Xác nhận redirect `/threads/:id`.
+6. Xác nhận detail title và heading `Posts` render.
+
+Full desktop flow vẫn ở:
+
+- `frontend/e2e/forum-flow.spec.ts`
+
+### Lệnh chạy E2E
+
+Chạy toàn bộ desktop + mobile:
+
+```powershell
+cd frontend
+npm run test:e2e
+```
+
+Chạy mobile-only:
+
+```powershell
+cd frontend
+npm run test:e2e:mobile
+```
+
+Frontend dev server không cần chạy riêng vì Playwright `webServer` tự start hoặc reuse server sẵn có.
+
+Backend vẫn cần chạy riêng trước E2E:
+
+```powershell
+cd backend
+npm run start:dev
+```
+
+### Dữ liệu dev
+
+Desktop E2E vẫn tạo dữ liệu DB local/dev:
+
+- 1 thread `E2E Thread <timestamp>`.
+- 1 first post.
+- 1 main reply.
+- 1 nested reply.
+- 1 vote thread.
+- 1 vote post.
+
+Mobile smoke chỉ đọc dữ liệu, không tạo dữ liệu mới.
+
+API smoke backend cũng tạo dữ liệu dev theo timestamp như Phase 3G. Không có bước nào drop/reset DB.
+
+### Kết quả test/precheck
+
+Đã test trường hợp backend chưa chạy:
+
+- `npm run test:e2e`: FAIL có chủ đích, fail nhanh ở backend precheck với message rõ cần start PostgreSQL/backend.
+
+Đã test khi backend local chạy ở `http://localhost:3001/api`:
+
+- `npm run test:e2e`: PASS, 2 tests passed.
+  - desktop Chromium full forum flow: PASS.
+  - mobile Chromium smoke: PASS.
+- `npm run test:e2e:mobile`: PASS, 1 test passed.
+
+Playwright webServer có tự start frontend; output có Node deprecation warning `DEP0205` từ Vite/toolchain nhưng không chặn test.
+
+### Lệnh verify frontend
+
+Pass:
+
+- `npm ci`
+- `npm run build`
+- `npm run lint`
+- `npm run test:e2e`
+- `npm run test:e2e:mobile`
+
+Cảnh báo không chặn:
+
+- `npm ci` frontend vẫn báo 13 vulnerabilities và deprecated `heroicons-react` từ dependency tree hiện tại.
+- `npm run build` / Playwright webServer vẫn có Node deprecation warning `DEP0205` từ toolchain, build/test pass.
+
+### Lệnh verify backend
+
+Pass:
+
+- `npm ci`
+- `npx prisma validate`
+- `npx prisma generate`
+- `npx prisma migrate status`
+- `npm run build`
+- `npm test`
+- `npx eslint "apps/**/*.ts" "libs/**/*.ts"`
+- `npm run smoke:forum`
+
+Cảnh báo không chặn:
+
+- `npm ci` backend vẫn báo 56 vulnerabilities trong dependency tree hiện tại.
+- `npx prisma migrate status` xác nhận PostgreSQL local `forum_db` ở `localhost:5432` up to date với 2 migrations.
+
+Fail:
+
+- Không còn lệnh Phase 3H.1 nào fail khi backend/PostgreSQL đã chạy.
+- Trường hợp backend tắt fail có chủ đích để hướng dẫn setup rõ hơn.
+
+### Rủi ro còn lại
+
+- Backend vẫn phải được start thủ công vì phụ thuộc PostgreSQL local/env; Playwright chỉ auto-start frontend.
+- Mobile test là smoke read-only, chưa cover login/create/reply/vote trên mobile để tránh test quá giòn.
+- Desktop E2E và API smoke để lại dữ liệu dev sau mỗi lần chạy.
+- Dependency vulnerabilities hiện tại chưa xử lý vì cần phase riêng.
+
+### Bước tiếp theo đề xuất
+
+1. Nếu muốn E2E một lệnh hoàn toàn, thêm script orchestration start backend sau khi xác nhận DB local/dev an toàn.
+2. Bổ sung mobile login/create thread khi responsive menu ổn định hơn.
+3. Tách phase xử lý dependency vulnerabilities và deprecated package.
