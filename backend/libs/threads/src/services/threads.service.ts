@@ -334,10 +334,38 @@ export class ThreadsService {
       data.slug = await this.createUniqueSlug(updateThreadDto.title, id);
     }
 
-    return this.prisma.thread.update({
-      where: { id },
-      data,
-      include: this.threadInclude,
+    const shouldSyncFirstPost = updateThreadDto.content !== undefined;
+
+    return this.prisma.$transaction(async (tx) => {
+      const updatedThread = await tx.thread.update({
+        where: { id },
+        data,
+        include: this.threadInclude,
+      });
+
+      if (shouldSyncFirstPost) {
+        const firstPost = await tx.post.findFirst({
+          where: {
+            threadId: id,
+            parentId: null,
+          },
+          orderBy: {
+            createdAt: "asc",
+          },
+          select: {
+            id: true,
+          },
+        });
+
+        if (firstPost) {
+          await tx.post.update({
+            where: { id: firstPost.id },
+            data: { content: updateThreadDto.content },
+          });
+        }
+      }
+
+      return updatedThread;
     });
   }
 

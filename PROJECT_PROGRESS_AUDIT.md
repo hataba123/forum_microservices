@@ -3286,3 +3286,134 @@ Fail:
 1. Thêm E2E hoặc manual flow riêng cho delete thread nếu muốn cover redirect `/threads` sau xóa.
 2. Quyết định product behavior cho thread content và first post content: có cần đồng bộ khi sửa thread hay giữ độc lập.
 3. Tách phase xử lý dependency vulnerabilities/deprecated packages.
+
+## Phase 3I.1 Thread Content Sync/Delete Thread E2E Result
+
+### Vấn đề cũ
+
+Phase 3I cho phép edit thread content trên UI, nhưng backend đang lưu riêng:
+
+- `Thread.content`: snapshot/content nhanh của thread.
+- First post `Post.content`: bài đầu tiên trong danh sách posts.
+
+Khi update thread content, `Thread.content` đổi nhưng first post chưa tự đồng bộ, làm detail có thể hiển thị hai nội dung khác nhau.
+
+### Backend sync thread content với first post
+
+Đã sửa `backend/libs/threads/src/services/threads.service.ts` trong `ThreadsService.update`:
+
+- Nếu request update có `content`, backend tìm first post của thread bằng:
+  - `threadId = id`
+  - `parentId = null`
+  - `createdAt asc`
+  - lấy record đầu tiên
+- Update `Thread` và first post trong cùng Prisma transaction.
+- Chỉ update first post đầu tiên, không update replies, không cascade sang các post khác.
+- Nếu không tìm thấy first post, backend vẫn update `Thread.content` và không crash.
+- Nếu update chỉ có `title`, backend không update first post content.
+
+Không cần migration/schema change.
+
+### Backend tests
+
+Đã cập nhật `backend/libs/threads/src/services/threads.service.spec.ts`:
+
+- Create thread tạo first post trong transaction: giữ test cũ.
+- Update thread content sẽ update first post content.
+- Update title-only không gọi update first post.
+- Thread không có first post vẫn update thread content và không crash.
+
+Kết quả `npm test`: PASS, 4 suites, 24 tests.
+
+### Frontend reload sau edit thread
+
+`ThreadDetailPage` đã có sẵn flow sau update thread:
+
+- Submit edit thread gọi `threadService.updateThread`.
+- Thành công gọi `loadThreadDetail(id)`.
+- `loadThreadDetail(id)` load lại cả:
+  - `GET /threads/:id`
+  - `GET /posts?threadId=<id>&page=1&limit=100&sort=oldest`
+
+Vì vậy sau khi backend sync first post, UI reload sẽ hiển thị content mới ở cả thread body và first post trong posts list.
+
+### E2E sync content
+
+Đã cập nhật `frontend/e2e/forum-flow.spec.ts`:
+
+- Sau khi create thread, test click `Edit Thread`.
+- Đổi thread content thành `E2E edited thread content <timestamp>`.
+- Submit edit.
+- Kỳ vọng content mới xuất hiện 2 nơi: thread body và first post.
+
+### E2E delete thread riêng
+
+Đã thêm:
+
+- `frontend/e2e/delete-thread.spec.ts`
+
+Flow:
+
+1. Login seed user.
+2. Tạo thread riêng với title `E2E Delete Thread <timestamp>`.
+3. Redirect sang detail.
+4. Click `Delete Thread`.
+5. Confirm dialog.
+6. Kỳ vọng redirect về `/threads`.
+7. Kỳ vọng title thread vừa xóa không còn visible trong list.
+
+Test chỉ xóa thread do chính test tạo, không xóa seed data.
+
+Đã cập nhật `frontend/playwright.config.ts` để desktop Chromium project chạy cả:
+
+- `forum-flow.spec.ts`
+- `delete-thread.spec.ts`
+
+### Lệnh verify frontend
+
+Pass:
+
+- `npm ci`
+- `npm run build`
+- `npm run lint`
+- `npm run test:e2e` - 3 tests passed.
+- `npm run test:e2e:mobile` - 1 test passed.
+
+Cảnh báo không chặn:
+
+- `npm ci` frontend vẫn báo 13 vulnerabilities và deprecated `heroicons-react` từ dependency tree hiện tại.
+- `npm run build` / Playwright webServer vẫn có Node deprecation warning `DEP0205` từ toolchain.
+
+### Lệnh verify backend
+
+Pass:
+
+- `npm ci`
+- `npx prisma validate`
+- `npx prisma generate`
+- `npx prisma migrate status`
+- `npm run build`
+- `npm test`
+- `npx eslint "apps/**/*.ts" "libs/**/*.ts"`
+- `npm run smoke:forum`
+
+Cảnh báo không chặn:
+
+- `npm ci` backend vẫn báo 56 vulnerabilities trong dependency tree hiện tại.
+- `npx prisma migrate status` xác nhận PostgreSQL local `forum_db` ở `localhost:5432` up to date với 2 migrations.
+
+Fail:
+
+- Không còn lệnh Phase 3I.1 nào fail.
+
+### Rủi ro còn lại
+
+- Các thread cũ trong DB đã từng bị lệch `Thread.content` và first post content sẽ không được backfill tự động; phase này chỉ xử lý từ thời điểm update thread trở đi.
+- Nếu một thread bị mất first post do dữ liệu cũ/lỗi thủ công, update thread content không crash nhưng cũng không tạo first post mới.
+- Dependency vulnerabilities/deprecated packages vẫn cần phase riêng nếu muốn xử lý.
+
+### Bước tiếp theo đề xuất
+
+1. Nếu cần dữ liệu cũ đồng bộ, tạo script audit/backfill local rõ ràng, không tự chạy trên production.
+2. Thêm E2E hoặc API smoke cho thread title-only update nếu muốn phủ riêng behavior không đổi first post.
+3. Tách phase xử lý dependency vulnerabilities/deprecated packages.

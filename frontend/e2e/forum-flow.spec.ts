@@ -14,6 +14,7 @@ test("user can create a thread, reply, nested reply, and vote", async ({
   const timestamp = Date.now();
   const title = `E2E Thread ${timestamp}`;
   const firstPost = `E2E first post ${timestamp}`;
+  const editedThreadContent = `E2E edited thread content ${timestamp}`;
   const mainReply = `E2E main reply ${timestamp}`;
   const editedMainReply = `E2E edited main reply ${timestamp}`;
   const nestedReply = `E2E nested reply ${timestamp}`;
@@ -37,6 +38,11 @@ test("user can create a thread, reply, nested reply, and vote", async ({
   await expect(page).toHaveURL(/\/threads\/[^/]+$/);
   await expect(page.getByRole("heading", { name: title })).toBeVisible();
   await expect(page.getByText(firstPost).first()).toBeVisible();
+
+  await page.getByTestId("thread-edit-button").click();
+  await page.getByTestId("thread-edit-content-input").fill(editedThreadContent);
+  await page.getByTestId("thread-edit-submit").click();
+  await expect(page.getByText(editedThreadContent)).toHaveCount(2);
 
   await page.getByTestId("main-reply-input").fill(mainReply);
   await page.getByTestId("main-reply-submit").click();

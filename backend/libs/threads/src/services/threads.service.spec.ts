@@ -13,11 +13,14 @@ describe("ThreadsService", () => {
       thread: {
         findFirst: jest.fn(),
         findMany: jest.fn(),
+        findUnique: jest.fn(),
         count: jest.fn(),
         update: jest.fn(),
       },
       post: {
         create: jest.fn(),
+        findFirst: jest.fn(),
+        update: jest.fn(),
       },
       $transaction: jest.fn(),
     };
@@ -116,5 +119,140 @@ describe("ThreadsService", () => {
     await expect(service.findById("missing-thread")).rejects.toBeInstanceOf(
       NotFoundException
     );
+  });
+
+  it("syncs thread content to the first post when updating thread content", async () => {
+    const thread = {
+      id: "thread-1",
+      title: "Old title",
+      content: "Old content",
+      authorId: "user-1",
+      isLocked: false,
+    };
+    const updatedThread = {
+      ...thread,
+      title: "New title",
+      content: "New content",
+    };
+
+    prisma.thread.findUnique.mockResolvedValue(thread);
+    prisma.thread.findFirst.mockResolvedValue(null);
+    prisma.$transaction.mockImplementation(async (callback: any) =>
+      callback({
+        thread: {
+          update: prisma.thread.update.mockResolvedValue(updatedThread),
+        },
+        post: {
+          findFirst: prisma.post.findFirst.mockResolvedValue({ id: "post-1" }),
+          update: prisma.post.update.mockResolvedValue({ id: "post-1" }),
+        },
+      })
+    );
+
+    const result = await service.update(
+      "thread-1",
+      {
+        title: "New title",
+        content: "New content",
+      },
+      { id: "user-1", role: "USER" }
+    );
+
+    expect(result).toEqual(updatedThread);
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(prisma.post.findFirst).toHaveBeenCalledWith({
+      where: {
+        threadId: "thread-1",
+        parentId: null,
+      },
+      orderBy: {
+        createdAt: "asc",
+      },
+      select: {
+        id: true,
+      },
+    });
+    expect(prisma.post.update).toHaveBeenCalledWith({
+      where: { id: "post-1" },
+      data: { content: "New content" },
+    });
+  });
+
+  it("does not update first post when updating only thread title", async () => {
+    const thread = {
+      id: "thread-1",
+      title: "Old title",
+      content: "Same content",
+      authorId: "user-1",
+      isLocked: false,
+    };
+    const updatedThread = {
+      ...thread,
+      title: "New title",
+    };
+
+    prisma.thread.findUnique.mockResolvedValue(thread);
+    prisma.thread.findFirst.mockResolvedValue(null);
+    prisma.$transaction.mockImplementation(async (callback: any) =>
+      callback({
+        thread: {
+          update: prisma.thread.update.mockResolvedValue(updatedThread),
+        },
+        post: {
+          findFirst: prisma.post.findFirst,
+          update: prisma.post.update,
+        },
+      })
+    );
+
+    await service.update(
+      "thread-1",
+      {
+        title: "New title",
+      },
+      { id: "user-1", role: "USER" }
+    );
+
+    expect(prisma.post.findFirst).not.toHaveBeenCalled();
+    expect(prisma.post.update).not.toHaveBeenCalled();
+  });
+
+  it("updates thread content without crashing when first post is missing", async () => {
+    const thread = {
+      id: "thread-1",
+      title: "Title",
+      content: "Old content",
+      authorId: "user-1",
+      isLocked: false,
+    };
+    const updatedThread = {
+      ...thread,
+      content: "New content",
+    };
+
+    prisma.thread.findUnique.mockResolvedValue(thread);
+    prisma.$transaction.mockImplementation(async (callback: any) =>
+      callback({
+        thread: {
+          update: prisma.thread.update.mockResolvedValue(updatedThread),
+        },
+        post: {
+          findFirst: prisma.post.findFirst.mockResolvedValue(null),
+          update: prisma.post.update,
+        },
+      })
+    );
+
+    const result = await service.update(
+      "thread-1",
+      {
+        content: "New content",
+      },
+      { id: "user-1", role: "USER" }
+    );
+
+    expect(result).toEqual(updatedThread);
+    expect(prisma.post.findFirst).toHaveBeenCalledTimes(1);
+    expect(prisma.post.update).not.toHaveBeenCalled();
   });
 });

@@ -19,7 +19,7 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
-      testMatch: /forum-flow\.spec\.ts/,
+      testMatch: /(forum-flow|delete-thread)\.spec\.ts/,
       use: { ...devices["Desktop Chrome"] },
     },
     {
