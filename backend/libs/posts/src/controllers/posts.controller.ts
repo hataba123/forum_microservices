@@ -18,6 +18,7 @@ import {
 } from "@nestjs/swagger";
 import { AuthenticatedUser, PostsService } from "../services/posts.service";
 import { JwtAuthGuard } from "@libs/auth/guards/jwt-auth.guard";
+import { OptionalJwtAuthGuard } from "@libs/auth/guards/optional-jwt-auth.guard";
 import { CurrentUser } from "@libs/auth/decorators/current-user.decorator";
 import { CreatePostDto } from "../dto/create-post.dto";
 import { QueryPostsDto } from "../dto/query-posts.dto";
@@ -29,24 +30,26 @@ export class PostsController {
   constructor(private readonly postsService: PostsService) {}
 
   @Get()
+  @UseGuards(OptionalJwtAuthGuard)
   @ApiOperation({ summary: "Lấy danh sách bài viết" })
   @ApiResponse({
     status: 200,
     description: "Lấy danh sách bài viết thành công",
   })
-  async findAll(@Query() query: QueryPostsDto) {
-    return this.postsService.findAll(query);
+  async findAll(@Query() query: QueryPostsDto, @CurrentUser() user?: AuthenticatedUser) {
+    return this.postsService.findAll(query, user?.id);
   }
 
   @Get(":id")
+  @UseGuards(OptionalJwtAuthGuard)
   @ApiOperation({ summary: "Lấy thông tin chi tiết bài viết" })
   @ApiResponse({
     status: 200,
     description: "Lấy thông tin bài viết thành công",
   })
   @ApiResponse({ status: 404, description: "Không tìm thấy bài viết" })
-  async findOne(@Param("id") id: string) {
-    return this.postsService.findOne(id);
+  async findOne(@Param("id") id: string, @CurrentUser() user?: AuthenticatedUser) {
+    return this.postsService.findOne(id, user?.id);
   }
 
   @Post()

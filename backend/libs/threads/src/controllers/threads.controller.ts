@@ -12,6 +12,7 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { CurrentUser } from "@libs/auth/decorators/current-user.decorator";
 import { JwtAuthGuard } from "@libs/auth/guards/jwt-auth.guard";
+import { OptionalJwtAuthGuard } from "@libs/auth/guards/optional-jwt-auth.guard";
 import { CreateThreadDto } from "../dto/create-thread.dto";
 import { QueryThreadDto } from "../dto/query-thread.dto";
 import { UpdateThreadDto } from "../dto/update-thread.dto";
@@ -31,15 +32,17 @@ export class ThreadsController {
   }
 
   @Get()
+  @UseGuards(OptionalJwtAuthGuard)
   @ApiOperation({ summary: "Lay danh sach threads" })
-  async findAll(@Query() query: QueryThreadDto) {
-    return this.threadsService.findAll(query);
+  async findAll(@Query() query: QueryThreadDto, @CurrentUser() user: any) {
+    return this.threadsService.findAll(query, user?.id);
   }
 
   @Get(":id")
+  @UseGuards(OptionalJwtAuthGuard)
   @ApiOperation({ summary: "Lay thread theo ID" })
-  async findOne(@Param("id") id: string) {
-    return this.threadsService.findById(id);
+  async findOne(@Param("id") id: string, @CurrentUser() user: any) {
+    return this.threadsService.findById(id, user?.id);
   }
 
   @Patch(":id")

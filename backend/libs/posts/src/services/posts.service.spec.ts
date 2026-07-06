@@ -167,6 +167,31 @@ describe("PostsService", () => {
       pages: 1,
       totalPages: 1,
     });
+    expect(result.data[0].currentUserVote).toBe(0);
+  });
+
+  it("returns the current user vote for post reads", async () => {
+    prisma.post.findMany.mockResolvedValue([
+      {
+        id: "post-1",
+        votes: [
+          { userId: "user-1", value: 1 },
+          { userId: "user-2", value: -1 },
+        ],
+      },
+    ]);
+    prisma.post.count.mockResolvedValue(1);
+
+    const result = await service.findAll({ threadId: "thread-1" }, "user-1");
+
+    expect(result.data[0]).toEqual(
+      expect.objectContaining({
+        upvotes: 1,
+        downvotes: 1,
+        voteScore: 0,
+        currentUserVote: 1,
+      })
+    );
   });
 
   it("throws NotFoundException when a post does not exist", async () => {

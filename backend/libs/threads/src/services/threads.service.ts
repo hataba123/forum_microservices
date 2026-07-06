@@ -100,19 +100,53 @@ export class ThreadsService {
     return slug;
   }
 
-  private appendVoteStats(threads: any[]) {
+  private appendPostVoteStats(posts: any[] = [], currentUserId?: string) {
+    return posts.map((post) => {
+      const votes = post.votes || [];
+      const upvotes = votes.filter((vote) => vote.value === 1).length;
+      const downvotes = votes.filter((vote) => vote.value === -1).length;
+      const currentUserVote =
+        votes.find((vote) => currentUserId && vote.userId === currentUserId)?.value || 0;
+      const { votes: _votes, ...safePost } = post;
+      const voteScore = upvotes - downvotes;
+
+      return {
+        ...safePost,
+        upvotes,
+        downvotes,
+        voteScore,
+        currentUserVote,
+        voteStats: {
+          upvotes,
+          downvotes,
+          score: voteScore,
+          total: votes.length,
+        },
+      };
+    });
+  }
+
+  private appendVoteStats(threads: any[], currentUserId?: string) {
     return threads.map((thread) => {
       const votes = thread.votes || [];
       const upvotes = votes.filter((vote) => vote.value === 1).length;
       const downvotes = votes.filter((vote) => vote.value === -1).length;
-      const { votes: _votes, ...safeThread } = thread;
+      const currentUserVote =
+        votes.find((vote) => currentUserId && vote.userId === currentUserId)?.value || 0;
+      const { votes: _votes, posts, ...safeThread } = thread;
+      const voteScore = upvotes - downvotes;
 
       return {
         ...safeThread,
+        ...(posts ? { posts: this.appendPostVoteStats(posts, currentUserId) } : {}),
+        upvotes,
+        downvotes,
+        voteScore,
+        currentUserVote,
         voteStats: {
           upvotes,
           downvotes,
-          score: upvotes - downvotes,
+          score: voteScore,
           total: votes.length,
         },
       };
@@ -148,7 +182,7 @@ export class ThreadsService {
     });
   }
 
-  async findAll(query: QueryThreadDto = {}) {
+  async findAll(query: QueryThreadDto = {}, currentUserId?: string) {
     const page = this.parsePositiveInt(query.page, 1);
     const limit = this.parsePositiveInt(query.limit, 20, 100);
     const skip = (page - 1) * limit;
@@ -189,6 +223,7 @@ export class ThreadsService {
           ...this.threadInclude,
           votes: {
             select: {
+              userId: true,
               value: true,
             },
           },
@@ -201,7 +236,7 @@ export class ThreadsService {
     ]);
 
     return {
-      data: this.appendVoteStats(threads),
+      data: this.appendVoteStats(threads, currentUserId),
       pagination: {
         page,
         limit,
@@ -211,7 +246,7 @@ export class ThreadsService {
     };
   }
 
-  async findById(id: string) {
+  async findById(id: string, currentUserId?: string) {
     const thread = await this.prisma.thread
       .update({
         where: { id },
@@ -224,6 +259,7 @@ export class ThreadsService {
           ...this.threadInclude,
           votes: {
             select: {
+              userId: true,
               value: true,
             },
           },
@@ -244,6 +280,12 @@ export class ThreadsService {
                   children: true,
                 },
               },
+              votes: {
+                select: {
+                  userId: true,
+                  value: true,
+                },
+              },
             },
             orderBy: { createdAt: "asc" },
           },
@@ -255,7 +297,7 @@ export class ThreadsService {
       throw new NotFoundException("Khong tim thay thread");
     }
 
-    return this.appendVoteStats([thread])[0];
+    return this.appendVoteStats([thread], currentUserId)[0];
   }
 
   async update(id: string, updateThreadDto: UpdateThreadDto, user: any) {

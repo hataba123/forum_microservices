@@ -66,7 +66,7 @@ describe("ThreadsService", () => {
   });
 
   it("returns paginated threads", async () => {
-    prisma.thread.findMany.mockResolvedValue([{ id: "thread-1" }]);
+    prisma.thread.findMany.mockResolvedValue([{ id: "thread-1", votes: [] }]);
     prisma.thread.count.mockResolvedValue(1);
 
     const result = await service.findAll({ page: "2", limit: "5" });
@@ -83,6 +83,31 @@ describe("ThreadsService", () => {
       total: 1,
       totalPages: 1,
     });
+    expect(result.data[0].currentUserVote).toBe(0);
+  });
+
+  it("returns the current user vote for thread reads", async () => {
+    prisma.thread.findMany.mockResolvedValue([
+      {
+        id: "thread-1",
+        votes: [
+          { userId: "user-1", value: 1 },
+          { userId: "user-2", value: -1 },
+        ],
+      },
+    ]);
+    prisma.thread.count.mockResolvedValue(1);
+
+    const result = await service.findAll({}, "user-2");
+
+    expect(result.data[0]).toEqual(
+      expect.objectContaining({
+        upvotes: 1,
+        downvotes: 1,
+        voteScore: 0,
+        currentUserVote: -1,
+      })
+    );
   });
 
   it("throws NotFoundException when a thread does not exist", async () => {

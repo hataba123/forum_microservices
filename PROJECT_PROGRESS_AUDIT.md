@@ -1625,3 +1625,152 @@ Fail:
 1. Phase 2E: chuẩn hóa optional auth/currentUserVote cho read endpoints hoặc tích hợp frontend thread detail với posts/replies.
 2. Thêm soft delete cho posts nếu muốn hỗ trợ xóa nội dung nhưng giữ cây hội thoại.
 3. Chuẩn hóa response shape giữa Threads/Posts/Votes trước khi frontend dùng sâu.
+
+## Phase 2E Optional Auth Read Result
+
+### Đã thêm optional auth guard ở đâu
+
+- Thêm `backend/libs/auth/src/guards/optional-jwt-auth.guard.ts`.
+- Export guard trong `backend/libs/auth/src/index.ts`.
+- Không sửa `JwtAuthGuard` bắt buộc hiện có.
+
+Hành vi guard:
+
+- Không có `Authorization` header: cho request đi tiếp, `req.user` không có.
+- Có JWT hợp lệ: Passport JWT validate user và gán `req.user`.
+- Token sai/expired: guard bắt lỗi và cho request đi tiếp như anonymous.
+
+Lý do chọn anonymous cho token sai: các read endpoints là public, cách này tránh làm vỡ UI chỉ vì client giữ token cũ. Protected endpoints vẫn dùng `JwtAuthGuard` nên không bị nới quyền.
+
+### Endpoint dùng optional auth
+
+Threads:
+
+- `GET /api/threads`
+- `GET /api/threads/:id`
+
+Posts:
+
+- `GET /api/posts`
+- `GET /api/posts/:id`
+
+Các endpoint protected vẫn dùng `JwtAuthGuard`:
+
+- `POST /api/threads`
+- `PATCH /api/threads/:id`
+- `DELETE /api/threads/:id`
+- `POST /api/posts`
+- `PUT /api/posts/:id`
+- `DELETE /api/posts/:id`
+- Vote endpoints protected hiện có.
+
+### currentUserVote cho Threads
+
+Đã hoạt động.
+
+Thread response hiện có top-level:
+
+- `upvotes`
+- `downvotes`
+- `voteScore`
+- `currentUserVote`
+- `voteStats` giữ tương thích cũ.
+
+`currentUserVote`:
+
+- `1` nếu user đã upvote thread.
+- `-1` nếu user đã downvote thread.
+- `0` nếu anonymous hoặc user chưa vote.
+
+`GET /api/threads/:id` cũng thêm vote summary cho posts được include trong thread detail khi có dữ liệu votes.
+
+### currentUserVote cho Posts
+
+Đã hoạt động.
+
+Post response hiện có top-level:
+
+- `upvotes`
+- `downvotes`
+- `voteScore`
+- `currentUserVote`
+- `voteStats` giữ tương thích cũ.
+
+`currentUserVote`:
+
+- `1` nếu user đã upvote post.
+- `-1` nếu user đã downvote post.
+- `0` nếu anonymous hoặc user chưa vote.
+
+### File đã sửa/thêm
+
+- `backend/libs/auth/src/guards/optional-jwt-auth.guard.ts`
+- `backend/libs/auth/src/index.ts`
+- `backend/libs/threads/src/controllers/threads.controller.ts`
+- `backend/libs/threads/src/services/threads.service.ts`
+- `backend/libs/threads/src/services/threads.service.spec.ts`
+- `backend/libs/posts/src/controllers/posts.controller.ts`
+- `backend/libs/posts/src/services/posts.service.spec.ts`
+- `PROJECT_PROGRESS_AUDIT.md`
+
+Không sửa Prisma schema.
+Không tạo migration mới.
+Không sửa frontend.
+Không commit `.env`.
+
+### Test
+
+Unit test cập nhật:
+
+- Threads anonymous read trả `currentUserVote = 0`.
+- Threads read có `currentUserId` trả đúng vote của user.
+- Posts anonymous read trả `currentUserVote = 0`.
+- Posts read có `currentUserId` trả đúng vote của user.
+
+### Smoke test API local
+
+Đã chạy backend local trên `http://localhost:3001` và test:
+
+- Login `user@example.com`: PASS.
+- Public `GET /api/threads`: PASS, `currentUserVote = 0`.
+- Public `GET /api/threads/:id`: PASS, `currentUserVote = 0`.
+- Public `GET /api/posts?threadId=<threadId>`: PASS, `currentUserVote = 0`.
+- Public `GET /api/posts/:id`: PASS, `currentUserVote = 0`.
+- `GET /api/threads` với token sai: PASS, status 200, xử lý anonymous.
+- `POST /api/posts` không token: PASS, status 401.
+- Vote thread bằng user seed: PASS.
+- Vote post bằng user seed: PASS.
+- Authenticated `GET /api/threads`: PASS, `currentUserVote = 1`.
+- Authenticated `GET /api/threads/:id`: PASS, `currentUserVote = 1`.
+- Authenticated `GET /api/posts?threadId=<threadId>`: PASS, `currentUserVote = 1`.
+- Authenticated `GET /api/posts/:id`: PASS, `currentUserVote = 1`.
+- Public read lại sau khi vote: PASS, `currentUserVote = 0`.
+
+### Lệnh verify
+
+Pass:
+
+- `npm ci`
+- `npx prisma validate`
+- `npx prisma generate`
+- `npx prisma migrate status`
+- `npm run build`
+- `npm test`
+- `npx eslint "apps/**/*.ts" "libs/**/*.ts"`
+
+Fail:
+
+- Không còn lệnh Phase 2E nào fail.
+
+### Rủi ro còn lại
+
+- Optional guard hiện cố ý coi token sai/expired là anonymous trên read endpoints. Nếu sau này cần phân biệt token sai để báo logout UI, frontend/backend nên thống nhất contract riêng.
+- Threads/Posts list đang tính vote summary từ votes include. Dễ hiểu và không N+1, nhưng với thread/post có rất nhiều votes thì cần tối ưu aggregate ở phase performance.
+- Smoke test có để lại vote local dev của seed user trên thread/post được test; không ảnh hưởng code/migration.
+- `npm ci` vẫn báo vulnerability/deprecated dependency có sẵn; Phase 2E không nâng package để tránh scope creep.
+
+### Bước tiếp theo đề xuất
+
+1. Phase 2F: tích hợp frontend thread detail với posts/replies/votes/currentUserVote.
+2. Hoặc thêm soft delete cho posts nếu muốn xử lý xóa reply giống forum thật.
+3. Tối ưu vote aggregate nếu dữ liệu lớn.
