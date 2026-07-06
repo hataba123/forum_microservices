@@ -13,6 +13,7 @@
     "@headlessui/react": "^2.2.4",
     "@heroicons/react": "^2.2.0",
     "@tailwindcss/vite": "^4.1.10",
+    "axios": "^1.18.1",
     "heroicons-react": "^1.4.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

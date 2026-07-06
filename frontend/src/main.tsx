@@ -1,12 +1,14 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { RouterProvider } from "react-router-dom";
 import "./index.css";
-import { RouterProvider } from "react-router-dom"; // Dùng để điều hướng
-import { router } from "./router"; // Import routes đã tạo
+import { router } from "./router";
+import { AuthProvider } from "./stores/AuthContext";
 
-// Gắn router vào app
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <RouterProvider router={router} />
+    <AuthProvider>
+      <RouterProvider router={router} />
+    </AuthProvider>
   </StrictMode>
 );

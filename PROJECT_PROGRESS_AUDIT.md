@@ -1774,3 +1774,198 @@ Fail:
 1. Phase 2F: tích hợp frontend thread detail với posts/replies/votes/currentUserVote.
 2. Hoặc thêm soft delete cho posts nếu muốn xử lý xóa reply giống forum thật.
 3. Tối ưu vote aggregate nếu dữ liệu lớn.
+
+## Phase 3A Frontend API/Auth Foundation Result
+
+### File đã sửa/thêm
+
+- `frontend/.env.example`
+- `frontend/package.json`
+- `frontend/package-lock.json`
+- `frontend/src/main.tsx`
+- `frontend/src/types/auth.ts`
+- `frontend/src/services/apiClient.ts`
+- `frontend/src/services/authService.ts`
+- `frontend/src/services/tokenStorage.ts`
+- `frontend/src/stores/authContextValue.ts`
+- `frontend/src/stores/AuthContext.tsx`
+- `frontend/src/stores/useAuth.ts`
+- `frontend/src/components/Header.tsx`
+- `frontend/src/components/LoginModal.tsx`
+- `frontend/src/pages/RegisterPage.tsx`
+- `PROJECT_PROGRESS_AUDIT.md`
+
+Không sửa backend code trong Phase 3A.
+Không commit `.env` chứa config local/secret.
+
+### Audit frontend trước khi sửa
+
+- Frontend dùng React + Vite và `react-router-dom` v7.6.2.
+- Trước Phase 3A chưa có `frontend/src/services`, `frontend/src/stores`, `frontend/src/types`.
+- Chưa có Axios trong dependencies.
+- `LoginModal` là form tĩnh, chưa submit backend.
+- `RegisterPage` là form tĩnh, chưa submit backend.
+- `Header` luôn hiển thị Log in/Register, chưa biết trạng thái auth.
+
+### API client
+
+Tạo `frontend/src/services/apiClient.ts`.
+
+- Dùng Axios.
+- Base URL lấy từ `import.meta.env.VITE_API_BASE_URL`.
+- Fallback: `http://localhost:3000/api`.
+- `frontend/.env.example` có:
+  - `VITE_API_BASE_URL=http://localhost:3000/api`
+- Request interceptor tự gắn `Authorization: Bearer <accessToken>` nếu localStorage có token.
+- Response interceptor gặp 401 thì clear token local và phát event `auth:unauthorized` để UI logout.
+- Không hard-code token trong source code.
+
+### Auth service
+
+Tạo `frontend/src/services/authService.ts`.
+
+Hỗ trợ backend endpoints thật:
+
+- `POST /auth/login`
+- `POST /auth/register`
+- `GET /auth/me`
+- `POST /auth/logout`
+
+Response login map theo backend thật: `{ accessToken, user }`.
+Register backend hiện trả `{ message, user }`, chưa trả token; frontend gọi register xong sẽ auto-login bằng email/password vừa nhập.
+
+### Auth types
+
+Tạo `frontend/src/types/auth.ts`.
+
+Có type:
+
+- `UserRole`
+- `User`
+- `LoginRequest`
+- `RegisterRequest`
+- `AuthResponse`
+- `RegisterResponse`
+- `AuthState`
+
+`User` không chứa password.
+
+### AuthProvider/AuthContext
+
+Tạo nền auth bằng Context API, không thêm state management library mới.
+
+- `frontend/src/stores/authContextValue.ts`: context value type + context.
+- `frontend/src/stores/AuthContext.tsx`: `AuthProvider`.
+- `frontend/src/stores/useAuth.ts`: hook `useAuth`.
+
+AuthProvider quản lý:
+
+- `user`
+- `accessToken`
+- `isAuthenticated`
+- `isLoading`
+- `login`
+- `register`
+- `logout`
+- `loadMe`
+
+Khi app khởi động:
+
+- Nếu có token trong localStorage, gọi `/auth/me`.
+- Nếu `/auth/me` fail, clear token/user.
+
+### Token storage
+
+Tạo `frontend/src/services/tokenStorage.ts`.
+
+- Access token lưu ở localStorage key `forum_access_token` cho môi trường dev.
+- Không lưu password.
+- Chưa implement refresh token vì backend chưa có endpoint refresh.
+
+### Bọc app
+
+Cập nhật `frontend/src/main.tsx` để bọc toàn app bằng `AuthProvider` phía ngoài `RouterProvider`.
+
+### LoginModal
+
+Cập nhật `frontend/src/components/LoginModal.tsx`.
+
+- Form có controlled `email/password`.
+- Submit gọi `login` từ auth context.
+- Có loading state.
+- Có error message từ backend.
+- Login thành công thì đóng modal.
+- Không reload page.
+- Không hard-code user.
+
+Seed user có thể dùng khi backend chạy:
+
+- `admin@example.com` / `Admin@123456`
+- `user@example.com` / `User@123456`
+
+### RegisterPage
+
+Cập nhật `frontend/src/pages/RegisterPage.tsx`.
+
+- Form có controlled `username/email/password/date`.
+- Validate tối thiểu username/email/password không rỗng.
+- Submit gọi backend `POST /auth/register`.
+- Register thành công thì auto-login bằng email/password vừa nhập.
+- Auto-login thành công thì redirect `/`.
+- Nếu register thành công nhưng auto-login fail thì hiển thị success và yêu cầu login lại.
+
+### Header
+
+Cập nhật `frontend/src/components/Header.tsx`.
+
+- Chưa login: hiển thị Log in/Register như trước.
+- Đã login: hiển thị username hoặc email và nút Logout.
+- Logout clear token/user qua auth context.
+- Desktop và mobile đều dùng trạng thái auth.
+
+### Protected route
+
+Chưa thêm `ProtectedRoute` vì frontend hiện chưa có page protected rõ ràng.
+TODO cho phase sau khi có Create Thread/Profile hoặc trang cần bắt login.
+
+### Lệnh verify frontend
+
+Pass:
+
+- `npm ci`
+- `npm run build`
+- `npm run lint`
+
+Ghi chú:
+
+- `npm ci` báo 13 vulnerabilities và deprecated `heroicons-react` có sẵn/hiện tại từ dependency tree. Phase 3A không nâng package ngoài việc thêm `axios` để tránh scope creep.
+- `npm run build` có Node deprecation warning `DEP0205` từ toolchain, build vẫn pass.
+
+Fail:
+
+- Không còn lệnh frontend nào fail.
+
+### Manual test
+
+Chưa chạy browser manual test end-to-end vì backend local không đang chạy ở port `3000` hoặc `3001`, và `backend/node_modules` đã được dọn từ phase trước.
+
+Đã verify bằng build/lint TypeScript rằng:
+
+- Login/Register gọi service thật.
+- AuthProvider bọc app.
+- Header đọc trạng thái auth.
+- Axios interceptor gắn token tự động.
+
+### Rủi ro còn lại
+
+- Access token đang lưu localStorage, chấp nhận cho dev phase; production nên cân nhắc chiến lược token/cookie chặt hơn.
+- Chưa có refresh token flow vì backend chưa có endpoint refresh.
+- Nếu backend thực tế chạy `3001` thay vì `3000`, cần tạo `frontend/.env.local` với `VITE_API_BASE_URL=http://localhost:3001/api`. File `.env.local` không nên commit.
+- Chưa có protected route vì chưa có trang cần bảo vệ trong frontend hiện tại.
+- UI auth đã nối logic nhưng chưa được kiểm thử qua browser do backend local chưa chạy.
+
+### Bước tiếp theo đề xuất
+
+1. Phase 3B: tích hợp frontend Home/Thread list với backend categories/threads thật.
+2. Phase 3C: làm Thread detail dùng posts/replies/votes/currentUserVote.
+3. Thêm ProtectedRoute khi có Create Thread/Profile hoặc route cần login.

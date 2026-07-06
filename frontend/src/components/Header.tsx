@@ -8,6 +8,7 @@ import {
   ChevronDownIcon,
 } from "@heroicons/react/24/outline";
 import { Link } from "react-router-dom";
+import { useAuth } from "../stores/useAuth";
 /**
  * Header component for VOZ Clone website.
  * - Includes responsive navigation bar
@@ -16,6 +17,11 @@ import { Link } from "react-router-dom";
  */
 export default function Header() {
   const [isLoginOpen, setIsLoginOpen] = useState(false);
+  const { user, isAuthenticated, isLoading, logout } = useAuth();
+
+  const handleLogout = () => {
+    void logout();
+  };
 
   return (
     <Disclosure
@@ -112,19 +118,36 @@ export default function Header() {
                 </div>
               </div>
 
-              <div className="hidden md:flex space-x-2 ml-auto">
-                <button
-                  onClick={() => setIsLoginOpen(true)}
-                  className="text-white hover:bg-blue-500 px-3 py-2 rounded-md"
-                >
-                  Log in
-                </button>
-                <Link
-                  to="/register"
-                  className="text-white hover:bg-blue-500 px-3 py-2 rounded-md"
-                >
-                  Register
-                </Link>
+              <div className="hidden md:flex space-x-2 ml-auto items-center">
+                {isAuthenticated && user ? (
+                  <>
+                    <span className="px-3 py-2 text-sm text-blue-100">
+                      {user.username || user.email}
+                    </span>
+                    <button
+                      onClick={handleLogout}
+                      className="text-white hover:bg-blue-500 px-3 py-2 rounded-md"
+                    >
+                      Logout
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => setIsLoginOpen(true)}
+                      disabled={isLoading}
+                      className="text-white hover:bg-blue-500 px-3 py-2 rounded-md disabled:opacity-60"
+                    >
+                      Log in
+                    </button>
+                    <Link
+                      to="/register"
+                      className="text-white hover:bg-blue-500 px-3 py-2 rounded-md"
+                    >
+                      Register
+                    </Link>
+                  </>
+                )}
               </div>
               {/* Modal hiển thị nếu click "Log in" */}
               <LoginModal
@@ -194,18 +217,35 @@ export default function Header() {
 
             {/* Auth buttons for mobile */}
             <div className="border-t border-blue-500 pt-3">
-              <Link
-                to="/login"
-                className="block px-3 py-2 rounded-md hover:bg-blue-500 text-white"
-              >
-                Log in
-              </Link>
-              <Link
-                to="/register"
-                className="block px-3 py-2 rounded-md hover:bg-blue-500 text-white"
-              >
-                Register
-              </Link>
+              {isAuthenticated && user ? (
+                <>
+                  <div className="block px-3 py-2 text-blue-100">
+                    {user.username || user.email}
+                  </div>
+                  <button
+                    onClick={handleLogout}
+                    className="block w-full text-left px-3 py-2 rounded-md hover:bg-blue-500 text-white"
+                  >
+                    Logout
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={() => setIsLoginOpen(true)}
+                    disabled={isLoading}
+                    className="block w-full text-left px-3 py-2 rounded-md hover:bg-blue-500 text-white disabled:opacity-60"
+                  >
+                    Log in
+                  </button>
+                  <Link
+                    to="/register"
+                    className="block px-3 py-2 rounded-md hover:bg-blue-500 text-white"
+                  >
+                    Register
+                  </Link>
+                </>
+              )}
             </div>
           </Disclosure.Panel>
         </>
