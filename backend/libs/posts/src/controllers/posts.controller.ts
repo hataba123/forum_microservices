@@ -16,12 +16,12 @@ import {
   ApiResponse,
   ApiBearerAuth,
 } from "@nestjs/swagger";
-import { PostsService } from "../services/posts.service";
+import { AuthenticatedUser, PostsService } from "../services/posts.service";
 import { JwtAuthGuard } from "@libs/auth/guards/jwt-auth.guard";
-import { RolesGuard } from "@libs/auth/guards/roles.guard";
-import { Roles } from "@libs/auth/decorators/roles.decorator";
 import { CurrentUser } from "@libs/auth/decorators/current-user.decorator";
-import { UserRole } from "@libs/shared";
+import { CreatePostDto } from "../dto/create-post.dto";
+import { QueryPostsDto } from "../dto/query-posts.dto";
+import { UpdatePostDto } from "../dto/update-post.dto";
 
 @ApiTags("Posts")
 @Controller("posts")
@@ -34,12 +34,8 @@ export class PostsController {
     status: 200,
     description: "Lấy danh sách bài viết thành công",
   })
-  async findAll(
-    @Query("page") page?: number,
-    @Query("limit") limit?: number,
-    @Query("threadId") threadId?: string
-  ) {
-    return this.postsService.findAll({ page, limit, threadId });
+  async findAll(@Query() query: QueryPostsDto) {
+    return this.postsService.findAll(query);
   }
 
   @Get(":id")
@@ -59,8 +55,8 @@ export class PostsController {
   @ApiOperation({ summary: "Tạo bài viết mới" })
   @ApiResponse({ status: 201, description: "Tạo bài viết thành công" })
   @ApiResponse({ status: 401, description: "Chưa đăng nhập" })
-  async create(@Body() createPostDto: any, @CurrentUser() user: any) {
-    return this.postsService.create(createPostDto, user.id);
+  async create(@Body() createPostDto: CreatePostDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.postsService.create(createPostDto, user);
   }
 
   @Put(":id")
@@ -73,22 +69,21 @@ export class PostsController {
   @ApiResponse({ status: 404, description: "Không tìm thấy bài viết" })
   async update(
     @Param("id") id: string,
-    @Body() updatePostDto: any,
-    @CurrentUser() user: any
+    @Body() updatePostDto: UpdatePostDto,
+    @CurrentUser() user: AuthenticatedUser
   ) {
-    return this.postsService.update(id, updatePostDto, user.id);
+    return this.postsService.update(id, updatePostDto, user);
   }
 
   @Delete(":id")
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN, UserRole.MODERATOR)
+  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: "Xóa bài viết" })
   @ApiResponse({ status: 200, description: "Xóa bài viết thành công" })
   @ApiResponse({ status: 401, description: "Chưa đăng nhập" })
   @ApiResponse({ status: 403, description: "Không có quyền xóa" })
   @ApiResponse({ status: 404, description: "Không tìm thấy bài viết" })
-  async remove(@Param("id") id: string) {
-    return this.postsService.remove(id);
+  async remove(@Param("id") id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.postsService.remove(id, user);
   }
 }

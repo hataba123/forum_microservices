@@ -1478,3 +1478,150 @@ Fail:
 1. Phase 2D: hoàn thiện Posts DTO/service để đồng bộ validation và permission với Threads.
 2. Hoặc chuyển sang frontend tích hợp auth + threads + votes nếu muốn kiểm thử end-to-end UI sớm.
 3. Cân nhắc thêm DB check constraint thủ công trong migration riêng nếu muốn khóa chặt invariant post/thread vote ở database.
+
+## Phase 2D Posts/Replies Result
+
+### Vấn đề trước khi sửa
+
+- `PostsController` và `PostsService` còn nhận body/query bằng `any`, chưa có DTO riêng cho create/update/query posts.
+- `create` chưa kiểm tra thread tồn tại, chưa kiểm tra thread locked, chưa validate parent reply thuộc cùng thread.
+- `update` chỉ kiểm tra author, chưa cho ADMIN/MODERATOR sửa, chưa chặn user thường sửa trong thread locked.
+- `delete` bị khóa ở controller cho ADMIN/MODERATOR; author không tự xóa được dù service không nhận user để kiểm tra ownership.
+- Schema `Post` không có soft delete field, nên hard delete parent có replies có rủi ro phá cây reply hoặc fail vì constraint.
+- Response đã không trả password nhờ select author public info, nhưng vote response mới chỉ có `voteStats`, chưa chuẩn hóa top-level `voteScore/upvotes/downvotes/currentUserVote`.
+- List posts đã có filter `threadId` nhưng pagination default còn `limit=10`, chưa có filter `parentId/authorId/sort`.
+
+### File đã sửa/thêm
+
+- `backend/libs/posts/src/dto/create-post.dto.ts`
+- `backend/libs/posts/src/dto/update-post.dto.ts`
+- `backend/libs/posts/src/dto/query-posts.dto.ts`
+- `backend/libs/posts/src/controllers/posts.controller.ts`
+- `backend/libs/posts/src/services/posts.service.ts`
+- `backend/libs/posts/src/services/posts.service.spec.ts`
+- `backend/libs/posts/src/index.ts`
+- `PROJECT_PROGRESS_AUDIT.md`
+
+Không sửa Prisma schema và không tạo migration mới trong Phase 2D.
+Không sửa frontend.
+Không commit `.env`.
+
+### DTO/validation đã thêm
+
+- `CreatePostDto`: `content`, `threadId` required; `parentId` optional.
+- `UpdatePostDto`: `content` optional nhưng không được rỗng nếu truyền lên.
+- `QueryPostsDto`: `page`, `limit`, `threadId`, `parentId`, `authorId`, `sort`.
+- `sort` chỉ nhận `newest` hoặc `oldest`.
+- Default pagination: `page=1`, `limit=20`, max `limit=100`.
+
+Service vẫn trim và kiểm tra content rỗng để tránh payload toàn khoảng trắng lọt qua validation.
+
+### Endpoint hoạt động
+
+- `GET /api/posts`
+- `GET /api/posts/:id`
+- `POST /api/posts`
+- `PUT /api/posts/:id`
+- `DELETE /api/posts/:id`
+
+Read endpoints vẫn public.
+Create/update/delete yêu cầu JWT.
+
+### Auth/ownership/role
+
+- Create kiểm tra thread tồn tại và tạo post bằng user hiện tại.
+- Thread locked: user thường bị chặn; ADMIN/MODERATOR được phép create/update/delete.
+- Update: chỉ author hoặc ADMIN/MODERATOR được sửa; user khác trả 403.
+- Delete: chỉ author hoặc ADMIN/MODERATOR được xóa; user khác trả 403.
+- Nếu post có replies, delete trả `BadRequestException` vì schema chưa có soft delete.
+
+### Reply/nested reply
+
+- `parentId` optional để tạo reply lồng nhau.
+- Khi có `parentId`, service kiểm tra parent post tồn tại.
+- Parent post phải thuộc cùng `threadId`; nếu khác thread trả `BadRequestException`.
+- `findOne` include children cơ bản, author public info, `_count`, vote summary.
+- `findAll` hỗ trợ filter `threadId`, `parentId`, `authorId`.
+- Khi có `threadId`, sort mặc định là `oldest` để phù hợp thread detail.
+- Nếu không có `threadId`, sort mặc định là `newest` cho list global.
+
+### Vote score/currentUserVote
+
+Post response hiện trả thêm top-level:
+
+- `upvotes`
+- `downvotes`
+- `voteScore`
+- `currentUserVote`
+
+Vẫn giữ `voteStats` để không phá client/code cũ.
+Vì read endpoints đang public và chưa có optional JWT guard, `currentUserVote` mặc định là `0` trên public read.
+Các response create/update có truyền user hiện tại nên tính được `currentUserVote` nếu post đã có vote của user.
+
+### Soft delete
+
+Schema hiện chưa có soft delete field.
+Phase 2D không đổi schema theo yêu cầu minimal change.
+Delete hiện vẫn là hard delete cho post không có replies.
+Rủi ro còn lại: nếu sản phẩm cần giữ lịch sử hội thoại, cần thêm soft delete ở phase riêng trước khi production.
+
+### Test
+
+Thêm unit test `PostsService` cover:
+
+- Create post thành công khi thread tồn tại.
+- Create reply với parent cùng thread.
+- Create reply với parent khác thread bị `BadRequestException`.
+- Update bởi author thành công.
+- Update bởi user khác bị `ForbiddenException`.
+- Delete bởi admin thành công.
+- `findAll` có pagination và sort oldest theo thread detail.
+- `findOne` post không tồn tại bị `NotFoundException`.
+
+### Smoke test API local
+
+Đã chạy backend local trên `http://localhost:3001` và test:
+
+- Login `user@example.com`: PASS.
+- Login `admin@example.com`: PASS.
+- Register user phụ ngắn để test 403 ownership: PASS.
+- `GET /api/threads?page=1&limit=20`: PASS.
+- `POST /api/posts` tạo reply: PASS.
+- `POST /api/posts` tạo nested reply: PASS.
+- `GET /api/posts?threadId=<threadId>&page=1&limit=20`: PASS.
+- `GET /api/posts/:id`: PASS.
+- `PUT /api/posts/:id` bởi author: PASS.
+- `PUT /api/posts/:id` bởi user khác: PASS, trả 403.
+- `DELETE /api/posts/:id` parent đang có child: PASS, trả 400 rõ ràng.
+- `DELETE /api/posts/:id` child bởi author: PASS.
+- `DELETE /api/posts/:id` parent bởi admin sau khi xóa child: PASS.
+
+### Lệnh verify
+
+Pass:
+
+- `npm ci`
+- `npx prisma validate`
+- `npx prisma generate`
+- `npx prisma migrate status`
+- `npm run build`
+- `npm test`
+- `npx eslint "apps/**/*.ts" "libs/**/*.ts"`
+
+Fail:
+
+- Không còn lệnh Phase 2D nào fail.
+
+### Rủi ro còn lại
+
+- `currentUserVote` cho public read hiện luôn là `0`; muốn đúng theo token optional cần thêm optional JWT guard ở phase riêng.
+- Chưa có soft delete nên delete post không replies là hard delete.
+- Parent có replies đang bị chặn xóa; frontend cần hiển thị lỗi này hợp lý.
+- Smoke test có tạo một user phụ local dev để kiểm tra 403, không ảnh hưởng schema/migration.
+- `npm ci` vẫn báo vulnerability/deprecated dependency có sẵn; Phase 2D không nâng package để tránh scope creep.
+
+### Bước tiếp theo đề xuất
+
+1. Phase 2E: chuẩn hóa optional auth/currentUserVote cho read endpoints hoặc tích hợp frontend thread detail với posts/replies.
+2. Thêm soft delete cho posts nếu muốn hỗ trợ xóa nội dung nhưng giữ cây hội thoại.
+3. Chuẩn hóa response shape giữa Threads/Posts/Votes trước khi frontend dùng sâu.
