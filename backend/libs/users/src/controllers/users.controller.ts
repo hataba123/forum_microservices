@@ -14,7 +14,9 @@ import { ApiTags, ApiOperation, ApiResponse } from "@nestjs/swagger";
 import { UsersService } from "../services/users.service";
 import { CreateUserDto } from "../dto/create-user.dto";
 import { UpdateUserDto } from "../dto/update-user.dto";
-import { JwtAuthGuard, RolesGuard, Roles } from "@libs/auth";
+import { JwtAuthGuard } from "@libs/auth/guards/jwt-auth.guard";
+import { RolesGuard } from "@libs/auth/guards/roles.guard";
+import { Roles } from "@libs/auth/decorators/roles.decorator";
 import { UserRole } from "@libs/shared";
 
 @ApiTags("Users")

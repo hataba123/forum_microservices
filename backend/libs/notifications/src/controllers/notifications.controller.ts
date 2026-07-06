@@ -15,7 +15,8 @@ import {
   ApiBearerAuth,
 } from "@nestjs/swagger";
 import { NotificationsService } from "../services/notifications.service";
-import { JwtAuthGuard, CurrentUser } from "@libs/auth";
+import { JwtAuthGuard } from "@libs/auth/guards/jwt-auth.guard";
+import { CurrentUser } from "@libs/auth/decorators/current-user.decorator";
 
 @ApiTags("Notifications")
 @Controller("notifications")

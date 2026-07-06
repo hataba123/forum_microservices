@@ -17,7 +17,10 @@ import {
   ApiBearerAuth,
 } from "@nestjs/swagger";
 import { PostsService } from "../services/posts.service";
-import { JwtAuthGuard, RolesGuard, Roles, CurrentUser } from "@libs/auth";
+import { JwtAuthGuard } from "@libs/auth/guards/jwt-auth.guard";
+import { RolesGuard } from "@libs/auth/guards/roles.guard";
+import { Roles } from "@libs/auth/decorators/roles.decorator";
+import { CurrentUser } from "@libs/auth/decorators/current-user.decorator";
 import { UserRole } from "@libs/shared";
 
 @ApiTags("Posts")

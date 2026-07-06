@@ -14,7 +14,9 @@ import { ApiTags, ApiOperation, ApiResponse } from "@nestjs/swagger";
 import { CategoriesService } from "../services/categories.service";
 import { CreateCategoryDto } from "../dto/create-category.dto";
 import { UpdateCategoryDto } from "../dto/update-category.dto";
-import { JwtAuthGuard, RolesGuard, Roles } from "@libs/auth";
+import { JwtAuthGuard } from "@libs/auth/guards/jwt-auth.guard";
+import { RolesGuard } from "@libs/auth/guards/roles.guard";
+import { Roles } from "@libs/auth/decorators/roles.decorator";
 import { UserRole } from "@libs/shared";
 
 @ApiTags("Categories")

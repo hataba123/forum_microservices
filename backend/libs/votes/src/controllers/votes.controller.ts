@@ -14,7 +14,8 @@ import {
   ApiBearerAuth,
 } from "@nestjs/swagger";
 import { VotesService } from "../services/votes.service";
-import { JwtAuthGuard, CurrentUser } from "@libs/auth";
+import { JwtAuthGuard } from "@libs/auth/guards/jwt-auth.guard";
+import { CurrentUser } from "@libs/auth/decorators/current-user.decorator";
 
 @ApiTags("Votes")
 @Controller("votes")
