@@ -3417,3 +3417,180 @@ Fail:
 1. Nếu cần dữ liệu cũ đồng bộ, tạo script audit/backfill local rõ ràng, không tự chạy trên production.
 2. Thêm E2E hoặc API smoke cho thread title-only update nếu muốn phủ riêng behavior không đổi first post.
 3. Tách phase xử lý dependency vulnerabilities/deprecated packages.
+
+## Phase 3I.2 Thread Content Audit/Backfill Result
+
+### Vấn đề dữ liệu cũ
+
+Phase 3I.1 đã đảm bảo flow mới sync `Thread.content` sang first post khi update thread content. Tuy nhiên dữ liệu cũ tạo trước phase đó có thể vẫn lệch giữa:
+
+- `Thread.content`
+- first post `Post.content`
+
+Phase này thêm script audit/backfill local để kiểm tra và đồng bộ có kiểm soát, không chạy tự động trong app startup.
+
+### Script audit/backfill
+
+Script đặt ở:
+
+- `backend/scripts/audit-thread-content-sync.js`
+
+NPM scripts thêm trong `backend/package.json`:
+
+- `audit:thread-content`: chạy dry-run mặc định.
+- `backfill:thread-content`: chạy apply mode với `--apply`.
+
+Script dùng Prisma Client, không đọc/in password, token hoặc secret.
+
+### Rule đồng bộ
+
+Rule đã chốt:
+
+- `Thread.content` là source of truth cho thread body hiện tại.
+- First post `Post.content` phải đồng bộ theo `Thread.content`.
+- Backfill chỉ update first post content = thread.content khi bị lệch.
+- Không tự tạo first post nếu thread thiếu first post.
+- Không update replies hoặc các posts khác.
+- Không drop/reset/xóa dữ liệu.
+
+First post được xác định bằng:
+
+- `post.threadId = thread.id`
+- `post.parentId = null`
+- sort `createdAt asc`
+- lấy post đầu tiên.
+
+### Dry-run behavior
+
+Không có flag hoặc có `--dry-run` thì chỉ audit, không update DB.
+
+Script phân loại:
+
+- `synced`: thread content giống first post content.
+- `mismatched`: có first post nhưng content lệch.
+- `missingFirstPost`: không có first post.
+- `emptyThreadContent`: thread content rỗng, chỉ report và không update.
+
+Dry-run in summary:
+
+- Mode
+- Total threads checked
+- Synced
+- Mismatched
+- Missing first post
+- Skipped empty thread content
+
+Nếu có mismatch/missing/empty, script log tối đa 20 item gồm thread id, title, first post id, createdAt và độ dài content. Không in full content dài; `--verbose` chỉ in preview ngắn 80 ký tự.
+
+### Apply mode behavior
+
+Chạy `--apply` hoặc script `backfill:thread-content` thì:
+
+- Với mỗi `mismatched` có first post và thread content hợp lệ, update first post content = thread.content.
+- Giữ nguyên `Thread.content`.
+- Dùng Prisma transaction cho batch update.
+- Không update thread thiếu first post.
+- Không update thread content rỗng.
+- Sau apply, script chạy lại audit summary để xác nhận trạng thái.
+
+### Lệnh chạy
+
+Audit dry-run:
+
+```powershell
+cd backend
+npm run audit:thread-content
+```
+
+Backfill apply local/dev:
+
+```powershell
+cd backend
+npm run backfill:thread-content
+```
+
+Có thể giới hạn số thread:
+
+```powershell
+npm run audit:thread-content -- --limit=50
+```
+
+Có thể log preview ngắn:
+
+```powershell
+npm run audit:thread-content -- --verbose
+```
+
+### Kết quả audit local
+
+Đã chạy dry-run, không update DB.
+
+Kết quả local:
+
+- Mode: dry-run
+- Total threads checked: 15
+- Synced: 14
+- Mismatched: 1
+- Missing first post: 0
+- Skipped empty thread content: 0
+
+Mismatch được phát hiện:
+
+- Thread id: `cmr8ztxhq000614cgnyytfpkm`
+- Title: `Welcome to Forum Microservices`
+- First post id: `seed_post_welcome_admin`
+- Thread content length: 34
+- First post content length: 32
+
+Không chạy apply trong phase này vì yêu cầu mặc định dry-run và chưa có chỉ định sửa dữ liệu local ngay. Script `backfill:thread-content` đã sẵn sàng để chạy thủ công trên local/dev khi muốn đồng bộ.
+
+### Lệnh verify backend
+
+Pass:
+
+- `npm ci`
+- `npx prisma validate`
+- `npx prisma generate`
+- `npx prisma migrate status`
+- `npm run build`
+- `npm test`
+- `npx eslint "apps/**/*.ts" "libs/**/*.ts"`
+- `npm run smoke:forum`
+- `npm run audit:thread-content`
+
+Cảnh báo không chặn:
+
+- `npm ci` backend vẫn báo 56 vulnerabilities trong dependency tree hiện tại.
+- `npx prisma migrate status` xác nhận PostgreSQL local `forum_db` ở `localhost:5432` up to date với 2 migrations.
+
+### Lệnh verify frontend
+
+Pass:
+
+- `npm ci`
+- `npm run build`
+- `npm run lint`
+- `npm run test:e2e`
+- `npm run test:e2e:mobile`
+
+Cảnh báo không chặn:
+
+- `npm ci` frontend vẫn báo 13 vulnerabilities và deprecated `heroicons-react` từ dependency tree hiện tại.
+- `npm run build` / Playwright webServer vẫn có Node deprecation warning `DEP0205` từ toolchain.
+
+Fail:
+
+- Không còn lệnh Phase 3I.2 nào fail.
+
+### Rủi ro còn lại
+
+- Script backfill phải được chạy thủ công với `--apply`; dry-run không tự sửa mismatch.
+- Thread thiếu first post chỉ được report, chưa tự tạo first post.
+- Script chưa có unit test riêng vì là script JS độc lập, nhưng có `parseArgs`, `auditThreads`, `run` export rõ ràng và `main` chỉ chạy khi file được execute trực tiếp.
+- Dependency vulnerabilities/deprecated packages vẫn cần phase riêng.
+
+### Bước tiếp theo đề xuất
+
+1. Nếu muốn đồng bộ dữ liệu local hiện tại, chạy `cd backend && npm run backfill:thread-content`, sau đó chạy lại `npm run audit:thread-content`.
+2. Nếu muốn xử lý thread thiếu first post, tạo phase riêng để thiết kế rule tạo first post an toàn.
+3. Tách phase xử lý dependency vulnerabilities/deprecated packages.

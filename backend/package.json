@@ -23,7 +23,9 @@
     "db:generate": "prisma generate",
     "db:studio": "prisma studio",
     "seed": "ts-node prisma/seed.ts",
-    "smoke:forum": "node scripts/smoke-forum-flow.js"
+    "smoke:forum": "node scripts/smoke-forum-flow.js",
+    "audit:thread-content": "node scripts/audit-thread-content-sync.js",
+    "backfill:thread-content": "node scripts/audit-thread-content-sync.js --apply"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.19",
