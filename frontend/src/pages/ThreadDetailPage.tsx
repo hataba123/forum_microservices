@@ -6,12 +6,19 @@ import { postService } from "../services/postService";
 import { threadService } from "../services/threadService";
 import { voteService } from "../services/voteService";
 import { useAuth } from "../stores/useAuth";
-import type { Post, ThreadDetail, VoteValue } from "../types/forum";
+import type {
+  PaginatedResponse,
+  Post,
+  ThreadDetail,
+  VoteValue,
+} from "../types/forum";
 import { canManageContent } from "../utils/permissions";
 
 interface PostNode extends Post {
   replies: PostNode[];
 }
+
+const POSTS_PAGE_SIZE = 20;
 
 function formatDate(value?: string) {
   if (!value) {
@@ -64,6 +71,45 @@ function buildPostTree(posts: Post[]) {
   });
 
   return roots;
+}
+
+function mergeUniquePosts(existing: Post[], incoming: Post[]) {
+  const postMap = new Map<string, Post>();
+
+  existing.forEach((post) => {
+    postMap.set(post.id, post);
+  });
+
+  incoming.forEach((post) => {
+    postMap.set(post.id, post);
+  });
+
+  return Array.from(postMap.values());
+}
+
+function getTotalPages(pagination: {
+  limit?: number;
+  pages?: number;
+  total?: number;
+  totalPages?: number;
+}) {
+  if (pagination.totalPages !== undefined) {
+    return pagination.totalPages;
+  }
+
+  if (pagination.pages !== undefined) {
+    return pagination.pages;
+  }
+
+  if (pagination.total !== undefined && pagination.limit) {
+    return Math.ceil(pagination.total / pagination.limit);
+  }
+
+  return 1;
+}
+
+function getHasMorePosts(response: PaginatedResponse<Post>, page: number) {
+  return page < getTotalPages(response.pagination);
 }
 
 interface PostCardProps {
@@ -315,6 +361,11 @@ export default function ThreadDetailPage() {
   const [thread, setThread] = useState<ThreadDetail | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [hasMorePosts, setHasMorePosts] = useState(false);
+  const [isLoadingPosts, setIsLoadingPosts] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [postsError, setPostsError] = useState("");
   const [error, setError] = useState("");
   const [isEditingThread, setIsEditingThread] = useState(false);
   const [threadTitleInput, setThreadTitleInput] = useState("");
@@ -336,48 +387,113 @@ export default function ThreadDetailPage() {
   const [voteLoadingTarget, setVoteLoadingTarget] = useState<string | null>(null);
   const [voteError, setVoteError] = useState("");
 
-  const loadThreadDetail = useCallback(async (threadId: string) => {
-    setIsLoading(true);
-    setError("");
-
-    try {
-      const [threadData, postsResponse] = await Promise.all([
-        threadService.getThreadById(threadId),
-        postService.getPosts({
-          threadId,
-          page: 1,
-          limit: 100,
-          sort: "oldest",
-        }),
-      ]);
-
-      setThread(threadData);
-      setPosts(postsResponse.data);
-    } catch (loadError) {
-      setError(getApiErrorMessage(loadError, "Could not load thread detail."));
-    } finally {
-      setIsLoading(false);
-    }
+  const fetchPostsPage = useCallback((threadId: string, page: number) => {
+    return postService.getPosts({
+      threadId,
+      page,
+      limit: POSTS_PAGE_SIZE,
+      sort: "oldest",
+    });
   }, []);
 
-  const reloadPosts = useCallback(async () => {
-    if (!id) {
+  const applyPostsPage = useCallback(
+    (response: PaginatedResponse<Post>, page: number, append: boolean) => {
+      setPosts((currentPosts) =>
+        append ? mergeUniquePosts(currentPosts, response.data) : response.data
+      );
+      setCurrentPage(page);
+      setHasMorePosts(getHasMorePosts(response, page));
+    },
+    []
+  );
+
+  const loadThreadDetail = useCallback(
+    async (threadId: string) => {
+      setIsLoading(true);
+      setIsLoadingPosts(true);
+      setError("");
+      setPostsError("");
+
+      try {
+        const [threadData, postsResponse] = await Promise.all([
+          threadService.getThreadById(threadId),
+          fetchPostsPage(threadId, 1),
+        ]);
+
+        setThread(threadData);
+        applyPostsPage(postsResponse, 1, false);
+      } catch (loadError) {
+        setError(getApiErrorMessage(loadError, "Could not load thread detail."));
+      } finally {
+        setIsLoading(false);
+        setIsLoadingPosts(false);
+      }
+    },
+    [applyPostsPage, fetchPostsPage]
+  );
+
+  const reloadPosts = useCallback(
+    async (pagesToLoad = currentPage) => {
+      if (!id) {
+        return;
+      }
+
+      setIsLoadingPosts(true);
+      setPostsError("");
+
+      try {
+        const threadData = await threadService.getThreadById(id);
+        const firstPageResponse = await fetchPostsPage(id, 1);
+        const totalPages = getTotalPages(firstPageResponse.pagination);
+        const targetPage = Math.max(1, Math.min(pagesToLoad, totalPages || 1));
+        const remainingResponses =
+          targetPage > 1
+            ? await Promise.all(
+                Array.from({ length: targetPage - 1 }, (_, index) =>
+                  fetchPostsPage(id, index + 2)
+                )
+              )
+            : [];
+
+        const loadedPosts = [firstPageResponse, ...remainingResponses].flatMap(
+          (response) => response.data
+        );
+        const lastResponse =
+          remainingResponses.length > 0
+            ? remainingResponses[remainingResponses.length - 1]
+            : firstPageResponse;
+
+        setThread(threadData);
+        setPosts(mergeUniquePosts([], loadedPosts));
+        setCurrentPage(targetPage);
+        setHasMorePosts(getHasMorePosts(lastResponse, targetPage));
+      } finally {
+        setIsLoadingPosts(false);
+      }
+    },
+    [currentPage, fetchPostsPage, id]
+  );
+
+  const handleLoadMorePosts = async () => {
+    if (!id || !hasMorePosts || isLoadingMore) {
       return;
     }
 
-    const [threadData, postsResponse] = await Promise.all([
-      threadService.getThreadById(id),
-      postService.getPosts({
-        threadId: id,
-        page: 1,
-        limit: 100,
-        sort: "oldest",
-      }),
-    ]);
+    const nextPage = currentPage + 1;
+    setIsLoadingMore(true);
+    setPostsError("");
 
-    setThread(threadData);
-    setPosts(postsResponse.data);
-  }, [id]);
+    try {
+      const response = await fetchPostsPage(id, nextPage);
+      applyPostsPage(response, nextPage, true);
+    } catch (loadMoreError) {
+      setPostsError(
+        getApiErrorMessage(loadMoreError, "Could not load more posts.")
+      );
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -486,7 +602,8 @@ export default function ThreadDetailPage() {
 
     try {
       await voteService.voteThread(id, value);
-      await reloadPosts();
+      const threadData = await threadService.getThreadById(id);
+      setThread(threadData);
     } catch (voteSubmitError) {
       setVoteError(getApiErrorMessage(voteSubmitError, "Could not submit vote."));
     } finally {
@@ -877,6 +994,18 @@ export default function ThreadDetailPage() {
               ) : null}
             </div>
 
+            {postsError ? (
+              <div className="rounded-xs border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                {postsError}
+              </div>
+            ) : null}
+
+            {isLoadingPosts && posts.length > 0 ? (
+              <div className="rounded-xs bg-white p-3 text-sm text-gray-600">
+                Refreshing posts...
+              </div>
+            ) : null}
+
             {postTree.length === 0 ? (
               <div className="rounded-xs bg-white p-4 text-gray-600">
                 No posts found for this thread.
@@ -913,6 +1042,24 @@ export default function ThreadDetailPage() {
                 />
               ))
             )}
+
+            {hasMorePosts ? (
+              <div className="flex justify-center">
+                <button
+                  type="button"
+                  disabled={isLoadingMore}
+                  onClick={() => void handleLoadMorePosts()}
+                  className="rounded-xs bg-blue-700 px-4 py-2 text-sm text-white disabled:opacity-50"
+                  data-testid="load-more-posts"
+                >
+                  {isLoadingMore ? "Loading..." : "Load more"}
+                </button>
+              </div>
+            ) : posts.length > 0 ? (
+              <div className="text-center text-sm text-gray-500">
+                All loaded posts are shown.
+              </div>
+            ) : null}
           </section>
         </div>
       </article>

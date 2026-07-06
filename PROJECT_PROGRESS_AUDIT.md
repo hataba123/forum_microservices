@@ -3594,3 +3594,217 @@ Fail:
 1. Nếu muốn đồng bộ dữ liệu local hiện tại, chạy `cd backend && npm run backfill:thread-content`, sau đó chạy lại `npm run audit:thread-content`.
 2. Nếu muốn xử lý thread thiếu first post, tạo phase riêng để thiết kế rule tạo first post an toàn.
 3. Tách phase xử lý dependency vulnerabilities/deprecated packages.
+
+## Local Thread Content Backfill Run Result
+
+### Database target
+
+Đã kiểm tra `backend/.env` trước khi chạy backfill:
+
+- DATABASE_URL trỏ local/dev: `postgresql://postgres:***@localhost:5432/forum_db?schema=public`.
+- Host: `localhost`.
+- Database: `forum_db`.
+- Không in password/secret.
+- Không drop/reset database.
+
+### Lệnh đã chạy
+
+Lần chạy đầu tiên `npm run audit:thread-content` không thực thi được vì `backend/node_modules` đang bị dọn từ phase trước, thiếu `@prisma/client`. Sau đó đã chạy `npm ci` và chạy lại đúng chuỗi lệnh yêu cầu.
+
+```powershell
+cd backend
+npm run audit:thread-content
+npm run backfill:thread-content
+npm run audit:thread-content
+```
+
+### Audit trước backfill
+
+Dry-run trước backfill:
+
+- Total threads checked: 17
+- Synced: 16
+- Mismatched: 1
+- Missing first post: 0
+- Skipped empty thread content: 0
+
+Mismatch:
+
+- Thread id: `cmr8ztxhq000614cgnyytfpkm`
+- Title: `Welcome to Forum Microservices`
+- First post id: `seed_post_welcome_admin`
+- Thread content length: 34
+- First post content length: 32
+
+### Backfill result
+
+`npm run backfill:thread-content` đã chạy apply mode trên DB local/dev.
+
+- First posts updated: 1
+- Không update missing first post.
+- Không drop/reset/xóa dữ liệu.
+
+Post-apply audit ngay trong script:
+
+- Total threads checked: 17
+- Synced: 17
+- Mismatched: 0
+- Missing first post: 0
+- Skipped empty thread content: 0
+
+### Audit sau backfill
+
+Audit dry-run sau backfill:
+
+- Total threads checked: 17
+- Synced: 17
+- Mismatched: 0
+- Missing first post: 0
+- Skipped empty thread content: 0
+
+Audit thêm sau smoke/E2E:
+
+- Total threads checked: 18
+- Synced: 18
+- Mismatched: 0
+- Missing first post: 0
+- Skipped empty thread content: 0
+
+Mismatched đã về 0.
+
+## Phase 3J ThreadDetail Posts Pagination Result
+
+### Vấn đề cũ
+
+`ThreadDetailPage` trước đó luôn gọi:
+
+```text
+GET /posts?threadId=<id>&page=1&limit=100&sort=oldest
+```
+
+Điều này cố định tải tối đa 100 posts mỗi lần mở detail hoặc reload sau thao tác ghi dữ liệu.
+
+### Thay đổi chính
+
+Đã cập nhật `frontend/src/pages/ThreadDetailPage.tsx`:
+
+- Thêm `POSTS_PAGE_SIZE = 20`.
+- Load page 1 khi mở thread detail.
+- Thêm state pagination/loading/error cho posts:
+  - `currentPage`
+  - `hasMorePosts`
+  - `isLoadingPosts`
+  - `isLoadingMore`
+  - `postsError`
+- Thêm helper merge posts theo id để append không duplicate.
+- Thêm nút `Load more` với `data-testid="load-more-posts"`.
+- Không còn `limit: 100` trong ThreadDetail.
+
+### Load more behavior
+
+Nút `Load more` xuất hiện khi `currentPage < totalPages/pages` từ backend pagination meta.
+
+Khi click:
+
+- Gọi page tiếp theo với `limit=20`, `sort=oldest`.
+- Append posts mới vào state.
+- Dedupe theo `post.id`.
+- Hiển thị loading riêng `Loading...` cho nút.
+- Nếu lỗi, hiển thị `postsError`, không reload toàn trang.
+
+Khi hết dữ liệu:
+
+- Ẩn nút load more.
+- Hiển thị message nhỏ `All loaded posts are shown.` nếu đã có posts.
+
+### Reload sau thao tác ghi dữ liệu
+
+Sau các thao tác ghi dữ liệu liên quan posts:
+
+- create main reply
+- create nested reply
+- vote post/reply
+- edit post
+- delete post
+
+Frontend gọi `reloadPosts(currentPage)` mặc định, reload lại thread detail và các page posts từ page 1 đến page hiện tại đã load, sau đó merge/dedupe lại state. Cách này ưu tiên đồng bộ chắc chắn, không update nested state thủ công.
+
+Sau vote thread:
+
+- Chỉ reload thread detail bằng `GET /threads/:id` để cập nhật vote state của thread.
+- Không reload posts list.
+
+Sau edit thread:
+
+- Vẫn gọi `loadThreadDetail(id)`, reset về page 1, phù hợp vì thread body/first post cần đồng bộ lại từ backend.
+
+### Nested replies với pagination
+
+Nested replies vẫn được build từ các posts đã load trong client.
+
+Rủi ro còn lại:
+
+- Nếu child đã load nhưng parent chưa load, logic hiện tại đưa child lên root như trước với dữ liệu thiếu parent trong phạm vi loaded pages.
+- Phase này không làm thuật toán phức tạp để fetch parent/children xuyên page.
+- Với `sort=oldest` và page 1, thread mới/E2E vẫn render parent-child bình thường vì số posts ít.
+
+### E2E result
+
+Sau thay đổi pagination:
+
+- `npm run test:e2e`: PASS, 3 tests passed.
+  - forum full flow: PASS.
+  - delete thread flow: PASS.
+  - mobile smoke: PASS.
+- `npm run test:e2e:mobile`: PASS, 1 test passed.
+
+Lưu ý: lần đầu chạy song song `npm run test:e2e` và `npm run test:e2e:mobile` trong cùng lúc gây Vite cache `EPERM` do hai webServer cùng đụng `node_modules/.vite`. Đã dọn cache và chạy tuần tự, tất cả pass. Không phải lỗi app/runtime.
+
+### Lệnh verify backend
+
+Pass:
+
+- `npm ci`
+- `npx prisma validate`
+- `npx prisma generate`
+- `npx prisma migrate status`
+- `npm run build`
+- `npm test`
+- `npx eslint "apps/**/*.ts" "libs/**/*.ts"`
+- `npm run smoke:forum`
+- `npm run audit:thread-content`
+
+Cảnh báo không chặn:
+
+- `npm ci` backend vẫn báo 56 vulnerabilities trong dependency tree hiện tại.
+
+### Lệnh verify frontend
+
+Pass:
+
+- `npm ci`
+- `npm run build`
+- `npm run lint`
+- `npm run test:e2e`
+- `npm run test:e2e:mobile`
+
+Cảnh báo không chặn:
+
+- `npm ci` frontend vẫn báo 13 vulnerabilities và deprecated `heroicons-react` từ dependency tree hiện tại.
+- `npm run build` / Playwright webServer vẫn có Node deprecation warning `DEP0205` từ toolchain.
+
+Fail:
+
+- Không còn lệnh nào fail sau khi chạy tuần tự.
+
+### Rủi ro còn lại
+
+- Reply mới tạo khi thread đã có nhiều page có thể nằm ở page sau; hiện frontend reload các page đã load thay vì tự nhảy đến page cuối.
+- Nested replies xuyên page vẫn chỉ render đúng trong phạm vi posts đã load.
+- Chưa có E2E riêng cho nút Load more vì dữ liệu test hiện chưa tạo đủ hơn 20 posts trong một thread.
+
+### Bước tiếp theo đề xuất
+
+1. Thêm E2E riêng tạo thread với hơn 20 posts để kiểm tra `Load more` nếu cần độ phủ cao hơn.
+2. Thiết kế API/tree response riêng nếu muốn nested replies luôn đầy đủ xuyên pagination.
+3. Tách phase xử lý dependency vulnerabilities/deprecated packages.
