@@ -1,5 +1,6 @@
 import { createBrowserRouter } from "react-router-dom";
 import App from "../App";
+import CreateThreadPage from "../pages/CreateThreadPage";
 import HomePage from "../pages/HomePage";
 import RegisterPage from "../pages/RegisterPage";
 import ThreadDetailPage from "../pages/ThreadDetailPage";
@@ -17,6 +18,10 @@ export const router = createBrowserRouter([
       {
         path: "threads",
         element: <ThreadsPage />,
+      },
+      {
+        path: "threads/new",
+        element: <CreateThreadPage />,
       },
       {
         path: "threads/:id",

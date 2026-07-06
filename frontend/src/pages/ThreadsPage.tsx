@@ -55,8 +55,14 @@ export default function ThreadsPage() {
   return (
     <div className="max-w-7xl mx-auto px-4 py-6">
       <div className="bg-gray-100 rounded-xs shadow">
-        <div className="bg-white px-4 py-3 rounded-t-xl">
+        <div className="flex flex-col gap-3 bg-white px-4 py-3 rounded-t-xl sm:flex-row sm:items-center sm:justify-between">
           <h1 className="text-xl font-bold text-blue-700">Threads</h1>
+          <Link
+            to="/threads/new"
+            className="rounded-xs bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800"
+          >
+            Create Thread
+          </Link>
         </div>
 
         {isLoading ? (

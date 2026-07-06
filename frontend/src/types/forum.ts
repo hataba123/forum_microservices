@@ -123,6 +123,12 @@ export interface ThreadDetail extends Thread {
   posts?: Post[];
 }
 
+export interface CreateThreadRequest {
+  title: string;
+  content: string;
+  categoryId: string;
+}
+
 export interface PaginationMeta {
   page: number;
   limit: number;

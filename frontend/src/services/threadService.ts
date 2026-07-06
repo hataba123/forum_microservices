@@ -1,5 +1,6 @@
 import { apiClient } from "./apiClient";
 import type {
+  CreateThreadRequest,
   PaginatedResponse,
   Thread,
   ThreadDetail,
@@ -29,6 +30,11 @@ export const threadService = {
 
   async getThreadById(id: string) {
     const response = await apiClient.get<ThreadDetail>(`/threads/${id}`);
+    return response.data;
+  },
+
+  async createThread(input: CreateThreadRequest) {
+    const response = await apiClient.post<ThreadDetail>("/threads", input);
     return response.data;
   },
 };

@@ -2581,3 +2581,89 @@ Fail:
 1. Phase 3F: thêm Create Thread UI protected bằng auth.
 2. Sau đó thêm Edit/Delete UI cho owner/admin/mod nếu cần.
 3. Tối ưu ThreadDetail reload/pagination khi số posts lớn.
+
+## Phase 3F Frontend Create Thread Result
+
+### File đã sửa/thêm
+
+- `frontend/src/types/forum.ts`: thêm `CreateThreadRequest`.
+- `frontend/src/services/threadService.ts`: thêm `threadService.createThread(input)` gọi `POST /threads` bằng `apiClient`.
+- `frontend/src/pages/CreateThreadPage.tsx`: thêm page tạo thread protected bằng auth.
+- `frontend/src/router/index.tsx`: thêm route `/threads/new` trước `/threads/:id`.
+- `frontend/src/pages/ThreadsPage.tsx`: thêm link `Create Thread` tới `/threads/new`.
+- `PROJECT_PROGRESS_AUDIT.md`: cập nhật kết quả Phase 3F.
+
+Không sửa backend trong phase này. Không commit `frontend/.env.local`.
+
+### Form create thread
+
+Form `/threads/new` gồm:
+
+- Category select.
+- Title input.
+- Content textarea.
+- Submit button.
+- Cancel/back link.
+
+Frontend không gửi `slug`; backend tiếp tục tự generate slug.
+
+### Auth behavior
+
+- Nếu AuthProvider còn loading session: hiển thị `Checking session...`.
+- Nếu chưa login: hiển thị message cần login/register, không render form submit.
+- Nếu đã login: load categories thật và cho submit form.
+- Submit invalid bị chặn tối thiểu khi thiếu `categoryId`, thiếu title trim, hoặc thiếu content trim.
+- Submit thành công redirect sang `/threads/:id` bằng `id` từ response backend.
+
+### Category/API behavior
+
+- Categories load từ `GET /categories` qua `categoryService.getCategories()`.
+- Create thread gọi `POST /threads` qua `threadService.createThread()`.
+- Token vẫn do `apiClient` tự gắn từ storage, không hard-code token trong page/service.
+
+### Manual smoke test
+
+Đã chạy backend local tạm trên `http://localhost:3001` và frontend Vite tạm trên `http://127.0.0.1:5173`.
+
+Kết quả:
+
+- `GET /api/categories`: PASS, trả 3 categories.
+- Login bằng user seed `user@example.com`: PASS.
+- `POST /api/threads`: PASS, tạo thread smoke `cmr9446jg0002y8v23y1o55fv`.
+- `GET /api/threads/cmr9446jg0002y8v23y1o55fv`: PASS, detail có đúng 1 post đầu tiên.
+- Frontend route `/threads/new`: PASS, status 200.
+- Frontend route `/threads/cmr9446jg0002y8v23y1o55fv`: PASS, status 200.
+
+Ghi chú: smoke test để lại 1 thread/post local dev mới nhằm xác nhận create end-to-end. Không đụng database production.
+
+### Lệnh verify
+
+Pass:
+
+- Frontend: `npm ci`
+- Frontend: `npm run build`
+- Frontend: `npm run lint`
+- Backend hỗ trợ smoke test: `npm ci`
+
+Cảnh báo không chặn:
+
+- Frontend `npm ci` vẫn báo 13 vulnerabilities trong dependency tree hiện tại.
+- Backend `npm ci` vẫn báo 56 vulnerabilities trong dependency tree hiện tại.
+- `npm run build` frontend vẫn có Node deprecation warning `DEP0205` từ toolchain, build pass.
+
+Fail:
+
+- Không còn lệnh Phase 3F nào fail.
+
+### Rủi ro còn lại
+
+- Chưa có E2E browser automation cho thao tác nhập form/click submit; smoke test đã xác nhận API create và route frontend.
+- Backend DTO yêu cầu title tối thiểu 3 ký tự; frontend hiện chặn title rỗng, còn lỗi min length nếu nhập 1-2 ký tự sẽ hiển thị từ backend.
+- Chưa có Edit/Delete UI, đúng phạm vi Phase 3F.
+- Chưa có pagination/lazy loading nâng cao cho danh sách/detail, đúng phạm vi phase trước.
+
+### Bước tiếp theo đề xuất
+
+1. Phase 3G: thêm UI edit/delete thread/post theo quyền owner/admin/mod nếu cần.
+2. Thêm kiểm thử E2E frontend cho login -> create thread -> detail hiển thị first post.
+3. Rà soát dependency vulnerabilities ở một phase riêng vì có thể cần nâng package ngoài phạm vi minimal UI.
