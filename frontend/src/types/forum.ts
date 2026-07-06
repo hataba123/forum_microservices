@@ -33,6 +33,27 @@ export interface VoteSummary {
   total: number;
 }
 
+export type VoteType = "THREAD" | "POST";
+export type VoteValue = 1 | -1;
+
+export interface CreateVoteRequest {
+  type: VoteType;
+  value: VoteValue;
+  threadId?: string;
+  postId?: string;
+}
+
+export interface VoteResponse {
+  voted: boolean;
+  value: VoteValue | 0;
+  targetType: VoteType;
+  targetId: string;
+  upvotes: number;
+  downvotes: number;
+  score: number;
+  total: number;
+}
+
 export interface Thread {
   id: string;
   title: string;

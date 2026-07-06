@@ -2429,3 +2429,155 @@ Fail:
 1. Phase 3E: thêm Vote UI cho thread/post, dùng backend votes API đã có.
 2. Phase 3F: thêm Create Thread UI protected bằng auth.
 3. Sau đó cân nhắc pagination/lazy loading posts cho thread dài.
+
+## Phase 3E Frontend Vote UI Result
+
+### File đã sửa/thêm
+
+- `frontend/src/types/forum.ts`
+- `frontend/src/services/voteService.ts`
+- `frontend/src/components/VoteButtons.tsx`
+- `frontend/src/pages/ThreadDetailPage.tsx`
+- `PROJECT_PROGRESS_AUDIT.md`
+
+Không sửa backend code trong Phase 3E.
+Không commit `.env.local`.
+Không thêm Create Thread UI hoặc Edit/Delete UI.
+
+### voteService
+
+Tạo `frontend/src/services/voteService.ts`.
+
+Methods:
+
+- `voteService.voteThread(threadId, value)` gọi `POST /votes` với `{ type: "THREAD", threadId, value }`.
+- `voteService.votePost(postId, value)` gọi `POST /votes` với `{ type: "POST", postId, value }`.
+- `voteService.deleteVote(targetId, type)` gọi `DELETE /votes/:targetId/:type` nếu cần dùng sau.
+
+API client tự gắn Bearer token từ localStorage, không hard-code token.
+
+### Vote types
+
+Cập nhật `frontend/src/types/forum.ts` thêm:
+
+- `VoteType = "THREAD" | "POST"`
+- `VoteValue = 1 | -1`
+- `CreateVoteRequest`
+- `VoteResponse`
+
+`VoteResponse` map theo backend hiện có: `voted`, `value`, `targetType`, `targetId`, `upvotes`, `downvotes`, `score`, `total`.
+
+### VoteButtons component
+
+Tạo `frontend/src/components/VoteButtons.tsx`.
+
+Props chính:
+
+- `score`
+- `upvotes`
+- `downvotes`
+- `currentUserVote`
+- `disabled`
+- `isLoading`
+- `onVote(value)`
+
+UI gồm:
+
+- Up button.
+- Score.
+- Down button.
+- Your vote.
+- Active state cho upvote/downvote theo `currentUserVote`.
+
+### Vote UI cho thread
+
+Cập nhật `frontend/src/pages/ThreadDetailPage.tsx`.
+
+- Thread detail dùng `VoteButtons` trong phần header/content của thread.
+- Nếu chưa login: button disabled, hiển thị `Log in to vote.`.
+- Nếu đã login: upvote gọi `voteThread(thread.id, 1)`, downvote gọi `voteThread(thread.id, -1)`.
+- Có loading state riêng cho thread vote qua `voteLoadingTarget`.
+- Có error state nếu vote lỗi.
+
+### Vote UI cho post/reply
+
+- Mỗi post/reply dùng `VoteButtons`.
+- Nếu chưa login: vote buttons disabled.
+- Nếu đã login: upvote gọi `votePost(post.id, 1)`, downvote gọi `votePost(post.id, -1)`.
+- Loading state theo post id: `post:<postId>`.
+- Vote UI vẫn render trong cây nested replies recursive.
+
+### Chưa login
+
+- Frontend không gọi vote API khi chưa login.
+- Vote buttons bị disabled.
+- Thread detail hiển thị message `Log in to vote.`.
+- Public read không bị ảnh hưởng.
+
+### Toggle/update vote
+
+Backend xử lý logic:
+
+- Vote cùng giá trị lần 2 -> remove vote, `voted=false`, `value=0`.
+- Vote ngược chiều -> update value.
+- Vote mới -> create.
+
+Frontend sau mỗi vote gọi reload dữ liệu để đồng bộ:
+
+- `GET /threads/:id`
+- `GET /posts?threadId=<id>&page=1&limit=100&sort=oldest`
+
+Nhờ reload, `voteScore`, `upvotes`, `downvotes`, `currentUserVote` hiển thị theo backend source of truth.
+
+### Manual smoke test
+
+Đã chạy backend local tạm trên `http://localhost:3001` và frontend Vite tạm trên `http://127.0.0.1:5173`.
+
+Kết quả:
+
+- Login `user@example.com`: PASS.
+- Lấy thread seed: PASS.
+- Lấy post seed: PASS.
+- Clear vote cũ trước test nếu có: PASS.
+- Thread upvote: PASS, response `value=1`.
+- Thread upvote lần 2: PASS, response `voted=false`, `value=0`.
+- Thread downvote: PASS, response `value=-1`.
+- Read lại `GET /threads/:id` với token: PASS, `currentUserVote=-1`.
+- Post upvote: PASS, response `value=1`.
+- Post đổi sang downvote: PASS, response `value=-1`.
+- Read lại `GET /posts?threadId=<id>` với token: PASS, post `currentUserVote=-1`.
+- Frontend route `/threads/<id>`: PASS, status 200.
+
+Ghi chú: smoke test để lại vote local dev của seed user ở trạng thái downvote cho thread/post được test.
+
+Sau smoke test đã tắt backend/frontend server tạm và xóa log tạm.
+
+### Lệnh verify frontend
+
+Pass:
+
+- `npm ci`
+- `npm run build`
+- `npm run lint`
+
+Ghi chú:
+
+- `npm ci` vẫn báo 13 vulnerabilities và deprecated `heroicons-react` từ dependency tree hiện tại.
+- `npm run build` vẫn có Node deprecation warning `DEP0205` từ toolchain, build pass.
+
+Fail:
+
+- Không còn lệnh frontend nào fail.
+
+### Rủi ro còn lại
+
+- Sau vote đang reload thread/posts thay vì cập nhật local state trực tiếp; chắc chắn nhưng tốn request.
+- Thread dài vẫn đang reload tối đa 100 posts như Phase 3C/3D.
+- Chưa có toast/global notification; lỗi vote hiển thị inline trên detail page.
+- Chưa có Create Thread UI, Edit/Delete UI.
+
+### Bước tiếp theo đề xuất
+
+1. Phase 3F: thêm Create Thread UI protected bằng auth.
+2. Sau đó thêm Edit/Delete UI cho owner/admin/mod nếu cần.
+3. Tối ưu ThreadDetail reload/pagination khi số posts lớn.

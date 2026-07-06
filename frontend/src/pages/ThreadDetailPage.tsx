@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import VoteButtons from "../components/VoteButtons";
 import { getApiErrorMessage } from "../services/apiClient";
 import { postService } from "../services/postService";
 import { threadService } from "../services/threadService";
+import { voteService } from "../services/voteService";
 import { useAuth } from "../stores/useAuth";
-import type { Post, ThreadDetail } from "../types/forum";
+import type { Post, ThreadDetail, VoteValue } from "../types/forum";
 
 interface PostNode extends Post {
   replies: PostNode[];
@@ -27,6 +29,20 @@ function getAuthorLabel(author?: { username?: string; email?: string }) {
 
 function getVoteScore(item: Pick<Post, "voteScore" | "voteStats"> | ThreadDetail) {
   return item.voteScore ?? item.voteStats?.score ?? 0;
+}
+
+function getUpvotes(item: Pick<Post, "upvotes" | "voteStats"> | ThreadDetail) {
+  return item.upvotes ?? item.voteStats?.upvotes ?? 0;
+}
+
+function getDownvotes(item: Pick<Post, "downvotes" | "voteStats"> | ThreadDetail) {
+  return item.downvotes ?? item.voteStats?.downvotes ?? 0;
+}
+
+function getCurrentUserVote(
+  item: Pick<Post, "currentUserVote"> | ThreadDetail
+) {
+  return item.currentUserVote ?? 0;
 }
 
 function buildPostTree(posts: Post[]) {
@@ -61,6 +77,9 @@ interface PostCardProps {
   onCancelReply: () => void;
   onNestedContentChange: (value: string) => void;
   onSubmitNested: (postId: string) => Promise<void>;
+  canVote: boolean;
+  voteLoadingTarget: string | null;
+  onVotePost: (postId: string, value: VoteValue) => Promise<void>;
   depth?: number;
 }
 
@@ -76,10 +95,14 @@ function PostCard({
   onCancelReply,
   onNestedContentChange,
   onSubmitNested,
+  canVote,
+  voteLoadingTarget,
+  onVotePost,
   depth = 0,
 }: PostCardProps) {
   const score = getVoteScore(post);
   const isReplyOpen = activeReplyPostId === post.id;
+  const postVoteTarget = `post:${post.id}`;
 
   return (
     <div
@@ -95,18 +118,15 @@ function PostCard({
           <div className="text-xs text-gray-500">{formatDate(post.createdAt)}</div>
         </div>
 
-        <div className="flex flex-wrap gap-2 text-xs text-gray-600">
-          <span className="rounded-xs bg-gray-100 px-2 py-1">Score {score}</span>
-          <span className="rounded-xs bg-gray-100 px-2 py-1">
-            Up {post.upvotes ?? post.voteStats?.upvotes ?? 0}
-          </span>
-          <span className="rounded-xs bg-gray-100 px-2 py-1">
-            Down {post.downvotes ?? post.voteStats?.downvotes ?? 0}
-          </span>
-          <span className="rounded-xs bg-blue-50 px-2 py-1 text-blue-700">
-            Your vote {post.currentUserVote ?? 0}
-          </span>
-        </div>
+        <VoteButtons
+          score={score}
+          upvotes={getUpvotes(post)}
+          downvotes={getDownvotes(post)}
+          currentUserVote={getCurrentUserVote(post)}
+          disabled={!canVote}
+          isLoading={voteLoadingTarget === postVoteTarget}
+          onVote={(value) => void onVotePost(post.id, value)}
+        />
       </div>
 
       <div className="mt-3 whitespace-pre-wrap text-sm leading-6 text-gray-800">
@@ -174,6 +194,9 @@ function PostCard({
               onCancelReply={onCancelReply}
               onNestedContentChange={onNestedContentChange}
               onSubmitNested={onSubmitNested}
+              canVote={canVote}
+              voteLoadingTarget={voteLoadingTarget}
+              onVotePost={onVotePost}
               depth={depth + 1}
             />
           ))}
@@ -197,6 +220,8 @@ export default function ThreadDetailPage() {
   const [activeReplyPostId, setActiveReplyPostId] = useState<string | null>(null);
   const [nestedReplyContent, setNestedReplyContent] = useState("");
   const [submittingTarget, setSubmittingTarget] = useState<string | null>(null);
+  const [voteLoadingTarget, setVoteLoadingTarget] = useState<string | null>(null);
+  const [voteError, setVoteError] = useState("");
 
   const loadThreadDetail = useCallback(async (threadId: string) => {
     setIsLoading(true);
@@ -296,6 +321,7 @@ export default function ThreadDetailPage() {
 
   const threadScore = getVoteScore(thread);
   const canReply = isAuthenticated && !thread.isLocked;
+  const canVote = isAuthenticated;
   const isSubmittingMain = submittingTarget === "main";
   const isSubmittingNested =
     submittingTarget !== null && submittingTarget !== "main";
@@ -327,6 +353,44 @@ export default function ThreadDetailPage() {
       setMainReplyError(getApiErrorMessage(submitError, "Could not submit reply."));
     } finally {
       setSubmittingTarget(null);
+    }
+  };
+
+  const handleVoteThread = async (value: VoteValue) => {
+    if (!id || !isAuthenticated) {
+      setVoteError("You need to log in to vote.");
+      return;
+    }
+
+    setVoteLoadingTarget(`thread:${id}`);
+    setVoteError("");
+
+    try {
+      await voteService.voteThread(id, value);
+      await reloadPosts();
+    } catch (voteSubmitError) {
+      setVoteError(getApiErrorMessage(voteSubmitError, "Could not submit vote."));
+    } finally {
+      setVoteLoadingTarget(null);
+    }
+  };
+
+  const handleVotePost = async (postId: string, value: VoteValue) => {
+    if (!isAuthenticated) {
+      setVoteError("You need to log in to vote.");
+      return;
+    }
+
+    setVoteLoadingTarget(`post:${postId}`);
+    setVoteError("");
+
+    try {
+      await voteService.votePost(postId, value);
+      await reloadPosts();
+    } catch (voteSubmitError) {
+      setVoteError(getApiErrorMessage(voteSubmitError, "Could not submit vote."));
+    } finally {
+      setVoteLoadingTarget(null);
     }
   };
 
@@ -403,19 +467,22 @@ export default function ThreadDetailPage() {
 
         <div className="space-y-4 p-4">
           <div className="rounded-xs border bg-white p-4">
-            <div className="mb-3 flex flex-wrap gap-2 text-xs text-gray-600">
-              <span className="rounded-xs bg-gray-100 px-2 py-1">
-                Score {threadScore}
-              </span>
-              <span className="rounded-xs bg-gray-100 px-2 py-1">
-                Up {thread.upvotes ?? thread.voteStats?.upvotes ?? 0}
-              </span>
-              <span className="rounded-xs bg-gray-100 px-2 py-1">
-                Down {thread.downvotes ?? thread.voteStats?.downvotes ?? 0}
-              </span>
-              <span className="rounded-xs bg-blue-50 px-2 py-1 text-blue-700">
-                Your vote {thread.currentUserVote ?? 0}
-              </span>
+            <div className="mb-3 space-y-2">
+              <VoteButtons
+                score={threadScore}
+                upvotes={getUpvotes(thread)}
+                downvotes={getDownvotes(thread)}
+                currentUserVote={getCurrentUserVote(thread)}
+                disabled={!canVote}
+                isLoading={voteLoadingTarget === `thread:${thread.id}`}
+                onVote={(value) => void handleVoteThread(value)}
+              />
+              {!isAuthenticated ? (
+                <div className="text-xs text-gray-500">Log in to vote.</div>
+              ) : null}
+              {voteError ? (
+                <div className="text-sm text-red-600">{voteError}</div>
+              ) : null}
             </div>
             <div className="whitespace-pre-wrap text-sm leading-6 text-gray-800">
               {thread.content}
@@ -485,6 +552,9 @@ export default function ThreadDetailPage() {
                   onCancelReply={handleCancelNestedReply}
                   onNestedContentChange={setNestedReplyContent}
                   onSubmitNested={handleSubmitNestedReply}
+                  canVote={canVote}
+                  voteLoadingTarget={voteLoadingTarget}
+                  onVotePost={handleVotePost}
                 />
               ))
             )}
