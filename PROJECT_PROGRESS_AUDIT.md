@@ -1172,3 +1172,135 @@ Fail còn lại:
 1. Không commit `.env`; nên đưa credential local vào `.env.example` dạng placeholder hoặc hướng dẫn riêng nếu cần.
 2. Phase 2B có thể bắt đầu implement `threads.service.ts` bằng Prisma CRUD tối thiểu.
 3. Sau đó xử lý rủi ro schema `Vote.targetId` đang FK về `posts` trong khi `VoteType` có cả `THREAD`.
+## Phase 2B Threads Implementation Result
+
+Ngày thực hiện: 2026-07-06
+
+### File đã sửa/thêm
+
+- `backend/libs/threads/src/dto/create-thread.dto.ts`
+- `backend/libs/threads/src/dto/update-thread.dto.ts`
+- `backend/libs/threads/src/dto/query-thread.dto.ts`
+- `backend/libs/threads/src/controllers/threads.controller.ts`
+- `backend/libs/threads/src/services/threads.service.ts`
+- `backend/libs/threads/src/services/threads.service.spec.ts`
+- `backend/libs/threads/src/index.ts`
+- `PROJECT_PROGRESS_AUDIT.md`
+
+### Trước Phase 2B
+
+- `ThreadsService` chỉ là placeholder, trả các message như `Threads service - create method`.
+- `ThreadsController` có route CRUD nhưng chưa có DTO, chưa có auth guard cho create/update/delete.
+- Không có Prisma CRUD thật cho model `Thread`.
+
+### Sau Phase 2B
+
+Threads đã có CRUD thật bằng Prisma ở mức tối thiểu:
+
+- `POST /api/threads`
+  - Yêu cầu JWT.
+  - Validate body bằng `CreateThreadDto`.
+  - Kiểm tra category tồn tại và `isActive = true`.
+  - Tự tạo slug từ title nếu client không gửi slug.
+  - Slug unique bằng hậu tố `-2`, `-3`, ...
+  - Tạo `Thread` và `Post` đầu tiên trong cùng transaction.
+
+- `GET /api/threads`
+  - Public.
+  - Có pagination `page`, `limit`, limit tối đa 100.
+  - Filter tối thiểu: `categoryId`, `categorySlug`, `authorId`, `isPinned`.
+  - Search title/content bằng `search`.
+  - Include author public info không có password, category, `_count.posts`.
+  - Sort pinned trước, sau đó newest trước.
+
+- `GET /api/threads/:id`
+  - Public.
+  - Tìm theo id.
+  - Tăng `viewCount` khi xem detail.
+  - Include author/category/posts cơ bản, không trả password.
+  - Throw `NotFoundException` nếu không tìm thấy.
+
+- `PATCH /api/threads/:id`
+  - Yêu cầu JWT.
+  - Chỉ author hoặc `ADMIN`/`MODERATOR` được sửa.
+  - User thường không được sửa thread bị locked.
+  - Admin/mod có thể sửa thread locked.
+  - Nếu đổi title hoặc slug, slug được xử lý unique.
+
+- `DELETE /api/threads/:id`
+  - Yêu cầu JWT.
+  - Chỉ author hoặc `ADMIN`/`MODERATOR` được xóa.
+  - Schema chưa có `isDeleted`, `status`, hoặc `deletedAt`, nên hiện dùng hard delete.
+
+### Auth/role
+
+- Create/update/delete dùng `JwtAuthGuard`.
+- Dùng `CurrentUser` decorator.
+- Không import auth qua barrel `@libs/auth` để tránh circular import.
+- Quyền update/delete kiểm tra trong service:
+  - Author được sửa/xóa thread của mình.
+  - `ADMIN`/`MODERATOR` được sửa/xóa thread của người khác.
+  - User khác bị chặn với `ForbiddenException`.
+
+### Post đầu tiên
+
+- Create thread có tạo post đầu tiên.
+- Lý do: schema hiện có `Thread.content` và `Post.threadId`; tạo post đầu tiên giúp thread detail/list bài viết có dữ liệu nhất quán với forum workflow mà không cần đổi schema.
+- Dữ liệu được tạo trong transaction để tránh thread có mà post đầu tiên không có.
+
+### Soft delete
+
+- Chưa có soft delete vì schema `Thread` không có field phù hợp.
+- Hiện `remove` dùng hard delete, và schema có cascade từ `Post` sang `Thread`.
+- Rủi ro: xóa thread sẽ xóa posts liên quan theo cascade, không giữ lịch sử/audit. Nên thêm `deletedAt` hoặc `status` trong phase riêng nếu muốn hành vi forum an toàn hơn.
+
+### Test/API smoke
+
+Unit test mới:
+
+- `ThreadsService.create` tạo thread và post đầu tiên trong transaction.
+- `ThreadsService.findAll` xử lý pagination.
+- `ThreadsService.findById` throw `NotFoundException` khi không có thread.
+
+Smoke API local đã chạy:
+
+- Login admin seed: PASS.
+- Login user seed: PASS.
+- `GET /api/categories`: PASS.
+- `POST /api/threads`: PASS.
+- `GET /api/threads?page=1&limit=20`: PASS.
+- `GET /api/threads/:id`: PASS.
+- User khác update thread: bị chặn 403, PASS.
+- Admin update thread: PASS.
+- Admin delete thread: PASS.
+
+### Lệnh verify
+
+Pass:
+
+- `npm ci`
+- `npx prisma validate`
+- `npx prisma generate`
+- `npx prisma migrate status`
+- `npm run build`
+- `npm test`
+- `npx eslint "apps/**/*.ts" "libs/**/*.ts"`
+
+Fail:
+
+- Không còn lệnh Phase 2B nào fail.
+
+### Vấn đề còn lại
+
+- `GET /api/threads/:id` hiện tìm theo id, chưa thêm route slug riêng để tránh route change không cần thiết.
+- Vote schema vẫn có rủi ro: `Vote.targetId` FK về `posts.id` nhưng `VoteType` có cả `THREAD`.
+- Thread delete hiện là hard delete do schema chưa hỗ trợ soft delete.
+- Notifications chưa được gọi khi tạo thread/post đầu tiên.
+- Frontend chưa tích hợp threads API.
+
+### Bước tiếp theo đề xuất
+
+1. Phase 2C: xử lý schema/logic vote thread/post hoặc tạm giới hạn vote cho post để tránh lỗi FK khi vote thread.
+2. Thêm soft delete cho thread/post trong phase schema có kiểm soát nếu muốn giữ lịch sử.
+3. Tích hợp frontend với API threads: list/detail/create.
+4. Bổ sung e2e test auth + thread CRUD qua HTTP.

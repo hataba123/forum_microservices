@@ -1,14 +1,20 @@
-// Controller quản lý threads
 import {
-  Controller,
-  Get,
-  Post,
   Body,
-  Patch,
-  Param,
+  Controller,
   Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
 } from "@nestjs/common";
-import { ApiTags, ApiOperation } from "@nestjs/swagger";
+import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
+import { CurrentUser } from "@libs/auth/decorators/current-user.decorator";
+import { JwtAuthGuard } from "@libs/auth/guards/jwt-auth.guard";
+import { CreateThreadDto } from "../dto/create-thread.dto";
+import { QueryThreadDto } from "../dto/query-thread.dto";
+import { UpdateThreadDto } from "../dto/update-thread.dto";
 import { ThreadsService } from "../services/threads.service";
 
 @ApiTags("Threads")
@@ -16,38 +22,43 @@ import { ThreadsService } from "../services/threads.service";
 export class ThreadsController {
   constructor(private readonly threadsService: ThreadsService) {}
 
-  // Tạo thread mới
   @Post()
-  @ApiOperation({ summary: "Tạo thread mới" })
-  async create(@Body() createThreadDto: any) {
-    return this.threadsService.create(createThreadDto);
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Tao thread moi" })
+  async create(@Body() createThreadDto: CreateThreadDto, @CurrentUser() user: any) {
+    return this.threadsService.create(createThreadDto, user);
   }
 
-  // Lấy danh sách threads
   @Get()
-  @ApiOperation({ summary: "Lấy danh sách threads" })
-  async findAll() {
-    return this.threadsService.findAll();
+  @ApiOperation({ summary: "Lay danh sach threads" })
+  async findAll(@Query() query: QueryThreadDto) {
+    return this.threadsService.findAll(query);
   }
 
-  // Lấy thread theo ID
   @Get(":id")
-  @ApiOperation({ summary: "Lấy thread theo ID" })
+  @ApiOperation({ summary: "Lay thread theo ID" })
   async findOne(@Param("id") id: string) {
     return this.threadsService.findById(id);
   }
 
-  // Cập nhật thread
   @Patch(":id")
-  @ApiOperation({ summary: "Cập nhật thread" })
-  async update(@Param("id") id: string, @Body() updateThreadDto: any) {
-    return this.threadsService.update(id, updateThreadDto);
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Cap nhat thread" })
+  async update(
+    @Param("id") id: string,
+    @Body() updateThreadDto: UpdateThreadDto,
+    @CurrentUser() user: any
+  ) {
+    return this.threadsService.update(id, updateThreadDto, user);
   }
 
-  // Xóa thread
   @Delete(":id")
-  @ApiOperation({ summary: "Xóa thread" })
-  async remove(@Param("id") id: string) {
-    return this.threadsService.remove(id);
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Xoa thread" })
+  async remove(@Param("id") id: string, @CurrentUser() user: any) {
+    return this.threadsService.remove(id, user);
   }
 }
