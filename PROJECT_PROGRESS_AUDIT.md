@@ -3133,3 +3133,156 @@ Fail:
 1. Nếu muốn E2E một lệnh hoàn toàn, thêm script orchestration start backend sau khi xác nhận DB local/dev an toàn.
 2. Bổ sung mobile login/create thread khi responsive menu ổn định hơn.
 3. Tách phase xử lý dependency vulnerabilities và deprecated package.
+
+## Phase 3I Edit/Delete UI Result
+
+### File đã sửa/thêm
+
+- `frontend/src/utils/permissions.ts`: thêm helper `canManageContent(currentUser, authorId)`.
+- `frontend/src/types/forum.ts`: thêm `UpdateThreadRequest`, `UpdatePostRequest`, `DeleteResponse`.
+- `frontend/src/services/threadService.ts`: thêm `updateThread(id, input)` và `deleteThread(id)`.
+- `frontend/src/services/postService.ts`: thêm `updatePost(id, input)` và `deletePost(id)`.
+- `frontend/src/pages/ThreadDetailPage.tsx`: thêm UI edit/delete thread và post/reply theo quyền.
+- `frontend/e2e/forum-flow.spec.ts`: mở rộng E2E desktop để edit main reply và delete nested reply.
+- `PROJECT_PROGRESS_AUDIT.md`: cập nhật kết quả Phase 3I.
+
+Không sửa backend. Không làm soft delete. Không commit `.env.local`.
+
+### Service update/delete
+
+Thread service:
+
+- `PATCH /threads/:id` qua `threadService.updateThread(id, { title, content })`.
+- `DELETE /threads/:id` qua `threadService.deleteThread(id)`.
+
+Post service:
+
+- `PUT /posts/:id` qua `postService.updatePost(id, { content })`.
+- `DELETE /posts/:id` qua `postService.deletePost(id)`.
+
+Backend `UpdateThreadDto` hiện hỗ trợ `title` và `content`, nên frontend cho sửa cả hai field này.
+
+### Quyền frontend
+
+Helper `canManageContent` hoạt động tối thiểu:
+
+- Chưa login: `false`.
+- `currentUser.id === authorId`: `true`.
+- `currentUser.role === "ADMIN"` hoặc `"MODERATOR"`: `true`.
+- Các trường hợp còn lại: `false`.
+
+UI chỉ hiện nút edit/delete khi frontend có đủ dữ liệu để xác định user là owner/admin/mod.
+
+Backend vẫn enforce permission thật:
+
+- Thread update/delete: author hoặc ADMIN/MODERATOR.
+- Post update/delete: author hoặc ADMIN/MODERATOR.
+- User khác sẽ bị 403 và frontend hiển thị message từ backend qua `getApiErrorMessage`.
+
+### Thread edit/delete UI
+
+Trong `ThreadDetailPage`:
+
+- Nếu current user có quyền, hiển thị `Edit Thread` và `Delete Thread`.
+- Edit Thread là inline form gồm title/content.
+- Validate title/content không rỗng trước khi gọi API.
+- Submit thành công gọi lại `loadThreadDetail(id)` để đồng bộ thread/posts.
+- Delete Thread có `window.confirm` trước khi gọi API.
+- Delete thành công redirect về `/threads`.
+- Delete/update fail hiển thị error inline.
+
+### Post/reply edit/delete UI
+
+Mỗi post/reply:
+
+- Nếu current user có quyền, hiển thị `Edit` và `Delete`.
+- Edit là inline textarea.
+- Validate content không rỗng trước khi gọi API.
+- Submit thành công gọi `reloadPosts()` để đồng bộ UI.
+- Delete có `window.confirm` trước khi gọi API.
+- Delete thành công gọi `reloadPosts()`.
+- Nếu backend chặn xóa post có replies, frontend hiển thị lỗi backend inline; frontend không tự xóa children.
+
+Đã thêm `data-post-id` và `data-post-parent-id` vào post card để E2E chọn nested reply ổn định. Đây chỉ là data attribute, không đổi visual/behavior.
+
+### User chưa login / user khác
+
+- Chưa login: không thấy nút edit/delete, vẫn thấy message login cho reply/vote như phase trước.
+- User khác: không thấy action nếu author/role đã có đủ dữ liệu để check; nếu dữ liệu thiếu hoặc thao tác bằng cách khác, backend vẫn chặn 403 và frontend hiển thị error.
+
+### E2E/manual result
+
+Đã cập nhật Playwright desktop E2E:
+
+- Login seed user.
+- Create thread.
+- Main reply.
+- Edit main reply content.
+- Nested reply.
+- Delete nested reply có confirm.
+- Vote thread.
+- Vote edited main reply.
+
+Kết quả:
+
+- `npm run test:e2e`: PASS, 2 tests passed.
+  - desktop Chromium full flow: PASS.
+  - mobile Chromium smoke: PASS.
+- `npm run test:e2e:mobile`: PASS.
+
+Trong lúc chỉnh test có lỗi selector E2E ở bước edit/delete nested reply; đã sửa bằng selector ổn định hơn (`data-post-id`, `data-post-parent-id`).
+
+Manual/API smoke:
+
+- `npm run smoke:forum`: PASS.
+- Backend delete post có replies vẫn do backend chặn bằng lỗi rõ `Khong the xoa bai viet da co replies`; frontend dùng chung error display để hiển thị message này.
+
+### Lệnh verify frontend
+
+Pass:
+
+- `npm ci`
+- `npm run build`
+- `npm run lint`
+- `npm run test:e2e`
+- `npm run test:e2e:mobile`
+
+Cảnh báo không chặn:
+
+- `npm ci` frontend vẫn báo 13 vulnerabilities và deprecated `heroicons-react` từ dependency tree hiện tại.
+- `npm run build` / Playwright webServer vẫn có Node deprecation warning `DEP0205` từ toolchain, build/test pass.
+
+### Lệnh verify backend
+
+Pass:
+
+- `npm ci`
+- `npx prisma validate`
+- `npx prisma generate`
+- `npx prisma migrate status`
+- `npm run build`
+- `npm test`
+- `npx eslint "apps/**/*.ts" "libs/**/*.ts"`
+- `npm run smoke:forum`
+
+Cảnh báo không chặn:
+
+- `npm ci` backend vẫn báo 56 vulnerabilities trong dependency tree hiện tại.
+- `npx prisma migrate status` xác nhận PostgreSQL local `forum_db` ở `localhost:5432` up to date với 2 migrations.
+
+Fail:
+
+- Không còn lệnh Phase 3I nào fail.
+
+### Rủi ro còn lại
+
+- Delete thread chưa được đưa vào E2E chính để tránh xóa dữ liệu vừa dùng cho các assertion sau đó.
+- Frontend permission là UX guard, không thay thế backend authorization.
+- Thread content update hiện cập nhật `thread.content`; first post ban đầu không tự đồng bộ theo thread content vì backend hiện lưu riêng thread content và post content.
+- Dependency vulnerabilities hiện tại chưa xử lý vì cần phase riêng.
+
+### Bước tiếp theo đề xuất
+
+1. Thêm E2E hoặc manual flow riêng cho delete thread nếu muốn cover redirect `/threads` sau xóa.
+2. Quyết định product behavior cho thread content và first post content: có cần đồng bộ khi sửa thread hay giữ độc lập.
+3. Tách phase xử lý dependency vulnerabilities/deprecated packages.

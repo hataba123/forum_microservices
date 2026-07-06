@@ -166,3 +166,16 @@ export interface CreatePostRequest {
   content: string;
   parentId?: string;
 }
+
+export interface UpdateThreadRequest {
+  title?: string;
+  content?: string;
+}
+
+export interface UpdatePostRequest {
+  content: string;
+}
+
+export interface DeleteResponse {
+  message: string;
+}

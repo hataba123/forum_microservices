@@ -1,10 +1,12 @@
 import { apiClient } from "./apiClient";
 import type {
   CreateThreadRequest,
+  DeleteResponse,
   PaginatedResponse,
   Thread,
   ThreadDetail,
   ThreadQueryParams,
+  UpdateThreadRequest,
 } from "../types/forum";
 
 function buildThreadQuery(params: ThreadQueryParams = {}) {
@@ -35,6 +37,16 @@ export const threadService = {
 
   async createThread(input: CreateThreadRequest) {
     const response = await apiClient.post<ThreadDetail>("/threads", input);
+    return response.data;
+  },
+
+  async updateThread(id: string, input: UpdateThreadRequest) {
+    const response = await apiClient.patch<ThreadDetail>(`/threads/${id}`, input);
+    return response.data;
+  },
+
+  async deleteThread(id: string) {
+    const response = await apiClient.delete<DeleteResponse>(`/threads/${id}`);
     return response.data;
   },
 };

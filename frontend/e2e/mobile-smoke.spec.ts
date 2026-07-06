@@ -7,7 +7,7 @@ test.beforeAll(async () => {
 
 test("mobile can open threads and render a thread detail", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByText(/Loading forum data|Top/)).toBeVisible();
+  await expect(page.getByText(/Loading forum data|Top/).first()).toBeVisible();
 
   await page.goto("/threads");
   await expect(page.getByRole("heading", { name: "Threads" })).toBeVisible();

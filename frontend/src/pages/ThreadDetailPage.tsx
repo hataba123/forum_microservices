@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import VoteButtons from "../components/VoteButtons";
 import { getApiErrorMessage } from "../services/apiClient";
 import { postService } from "../services/postService";
@@ -7,6 +7,7 @@ import { threadService } from "../services/threadService";
 import { voteService } from "../services/voteService";
 import { useAuth } from "../stores/useAuth";
 import type { Post, ThreadDetail, VoteValue } from "../types/forum";
+import { canManageContent } from "../utils/permissions";
 
 interface PostNode extends Post {
   replies: PostNode[];
@@ -80,6 +81,17 @@ interface PostCardProps {
   canVote: boolean;
   voteLoadingTarget: string | null;
   onVotePost: (postId: string, value: VoteValue) => Promise<void>;
+  canManagePost: (post: PostNode) => boolean;
+  activeEditPostId: string | null;
+  editPostContent: string;
+  postActionTarget: string | null;
+  postActionError: string;
+  postActionErrorTarget: string | null;
+  onEditPost: (post: PostNode) => void;
+  onCancelEditPost: () => void;
+  onEditPostContentChange: (value: string) => void;
+  onSubmitEditPost: (postId: string) => Promise<void>;
+  onDeletePost: (postId: string) => Promise<void>;
   depth?: number;
 }
 
@@ -98,11 +110,25 @@ function PostCard({
   canVote,
   voteLoadingTarget,
   onVotePost,
+  canManagePost,
+  activeEditPostId,
+  editPostContent,
+  postActionTarget,
+  postActionError,
+  postActionErrorTarget,
+  onEditPost,
+  onCancelEditPost,
+  onEditPostContentChange,
+  onSubmitEditPost,
+  onDeletePost,
   depth = 0,
 }: PostCardProps) {
   const score = getVoteScore(post);
   const isReplyOpen = activeReplyPostId === post.id;
   const postVoteTarget = `post:${post.id}`;
+  const isEditingPost = activeEditPostId === post.id;
+  const isPostActionLoading = postActionTarget === post.id;
+  const canManage = canManagePost(post);
 
   return (
     <div
@@ -110,6 +136,8 @@ function PostCard({
         depth > 0 ? "ml-4 border-l-4 border-l-blue-200" : ""
       }`}
       data-testid="post-card"
+      data-post-id={post.id}
+      data-post-parent-id={post.parentId || undefined}
     >
       <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
         <div>
@@ -132,10 +160,42 @@ function PostCard({
       </div>
 
       <div className="mt-3 whitespace-pre-wrap text-sm leading-6 text-gray-800">
-        {post.content}
+        {isEditingPost ? (
+          <div className="space-y-2">
+            <textarea
+              value={editPostContent}
+              onChange={(event) => onEditPostContentChange(event.target.value)}
+              className="min-h-28 w-full rounded-xs border p-2 text-sm"
+              data-testid="post-edit-input"
+            />
+            {postActionError && postActionErrorTarget === post.id ? (
+              <div className="text-sm text-red-600">{postActionError}</div>
+            ) : null}
+            <div className="flex gap-2">
+              <button
+                type="button"
+                disabled={!editPostContent.trim() || isPostActionLoading}
+                onClick={() => void onSubmitEditPost(post.id)}
+                className="rounded-xs bg-blue-700 px-3 py-1 text-sm text-white disabled:opacity-50"
+                data-testid="post-edit-submit"
+              >
+                {isPostActionLoading ? "Saving..." : "Save"}
+              </button>
+              <button
+                type="button"
+                onClick={onCancelEditPost}
+                className="rounded-xs bg-gray-200 px-3 py-1 text-sm text-gray-700"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          post.content
+        )}
       </div>
 
-      <div className="mt-3">
+      <div className="mt-3 flex flex-wrap gap-3">
         {canReply ? (
           <button
             type="button"
@@ -148,7 +208,33 @@ function PostCard({
         ) : !isAuthenticated ? (
           <span className="text-sm text-gray-500">Log in to reply.</span>
         ) : null}
+
+        {canManage ? (
+          <>
+            <button
+              type="button"
+              onClick={() => onEditPost(post)}
+              className="text-sm text-blue-700 hover:underline"
+              data-testid="post-edit-button"
+            >
+              Edit
+            </button>
+            <button
+              type="button"
+              disabled={isPostActionLoading}
+              onClick={() => void onDeletePost(post.id)}
+              className="text-sm text-red-700 hover:underline disabled:opacity-50"
+              data-testid="post-delete-button"
+            >
+              {isPostActionLoading ? "Deleting..." : "Delete"}
+            </button>
+          </>
+        ) : null}
       </div>
+
+      {postActionError && !isEditingPost && postActionErrorTarget === post.id ? (
+        <div className="mt-2 text-sm text-red-600">{postActionError}</div>
+      ) : null}
 
       {isReplyOpen ? (
         <div className="mt-3 rounded-xs bg-blue-50 p-3">
@@ -202,6 +288,17 @@ function PostCard({
               canVote={canVote}
               voteLoadingTarget={voteLoadingTarget}
               onVotePost={onVotePost}
+              canManagePost={canManagePost}
+              activeEditPostId={activeEditPostId}
+              editPostContent={editPostContent}
+              postActionTarget={postActionTarget}
+              postActionError={postActionError}
+              postActionErrorTarget={postActionErrorTarget}
+              onEditPost={onEditPost}
+              onCancelEditPost={onCancelEditPost}
+              onEditPostContentChange={onEditPostContentChange}
+              onSubmitEditPost={onSubmitEditPost}
+              onDeletePost={onDeletePost}
               depth={depth + 1}
             />
           ))}
@@ -213,17 +310,28 @@ function PostCard({
 
 export default function ThreadDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const { isAuthenticated } = useAuth();
+  const navigate = useNavigate();
+  const { isAuthenticated, user } = useAuth();
   const [thread, setThread] = useState<ThreadDetail | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+  const [isEditingThread, setIsEditingThread] = useState(false);
+  const [threadTitleInput, setThreadTitleInput] = useState("");
+  const [threadContentInput, setThreadContentInput] = useState("");
+  const [threadActionError, setThreadActionError] = useState("");
+  const [threadActionTarget, setThreadActionTarget] = useState<string | null>(null);
   const [mainReplyContent, setMainReplyContent] = useState("");
   const [mainReplyError, setMainReplyError] = useState("");
   const [nestedReplyError, setNestedReplyError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [activeReplyPostId, setActiveReplyPostId] = useState<string | null>(null);
   const [nestedReplyContent, setNestedReplyContent] = useState("");
+  const [activeEditPostId, setActiveEditPostId] = useState<string | null>(null);
+  const [editPostContent, setEditPostContent] = useState("");
+  const [postActionError, setPostActionError] = useState("");
+  const [postActionErrorTarget, setPostActionErrorTarget] = useState<string | null>(null);
+  const [postActionTarget, setPostActionTarget] = useState<string | null>(null);
   const [submittingTarget, setSubmittingTarget] = useState<string | null>(null);
   const [voteLoadingTarget, setVoteLoadingTarget] = useState<string | null>(null);
   const [voteError, setVoteError] = useState("");
@@ -293,6 +401,12 @@ export default function ThreadDetailPage() {
   }, [id, loadThreadDetail]);
 
   const postTree = useMemo(() => buildPostTree(posts), [posts]);
+
+  const canManageThread = canManageContent(user, thread?.authorId);
+  const canManagePost = useCallback(
+    (post: PostNode) => canManageContent(user, post.authorId),
+    [user]
+  );
 
   if (isLoading) {
     return (
@@ -446,6 +560,146 @@ export default function ThreadDetailPage() {
     }
   };
 
+  const handleStartEditThread = () => {
+    if (!thread || !canManageThread) {
+      return;
+    }
+
+    setThreadTitleInput(thread.title);
+    setThreadContentInput(thread.content);
+    setThreadActionError("");
+    setIsEditingThread(true);
+  };
+
+  const handleCancelEditThread = () => {
+    setIsEditingThread(false);
+    setThreadActionError("");
+    setThreadTitleInput("");
+    setThreadContentInput("");
+  };
+
+  const handleSubmitEditThread = async () => {
+    if (!id || !thread || !canManageThread) {
+      return;
+    }
+
+    const title = threadTitleInput.trim();
+    const content = threadContentInput.trim();
+
+    if (!title) {
+      setThreadActionError("Thread title is required.");
+      return;
+    }
+
+    if (!content) {
+      setThreadActionError("Thread content is required.");
+      return;
+    }
+
+    setThreadActionTarget("update");
+    setThreadActionError("");
+
+    try {
+      await threadService.updateThread(id, { title, content });
+      await loadThreadDetail(id);
+      setIsEditingThread(false);
+    } catch (updateError) {
+      setThreadActionError(
+        getApiErrorMessage(updateError, "Could not update thread.")
+      );
+    } finally {
+      setThreadActionTarget(null);
+    }
+  };
+
+  const handleDeleteThread = async () => {
+    if (!id || !thread || !canManageThread) {
+      return;
+    }
+
+    if (!window.confirm("Delete this thread? This action cannot be undone.")) {
+      return;
+    }
+
+    setThreadActionTarget("delete");
+    setThreadActionError("");
+
+    try {
+      await threadService.deleteThread(id);
+      navigate("/threads");
+    } catch (deleteError) {
+      setThreadActionError(
+        getApiErrorMessage(deleteError, "Could not delete thread.")
+      );
+    } finally {
+      setThreadActionTarget(null);
+    }
+  };
+
+  const handleStartEditPost = (post: PostNode) => {
+    if (!canManagePost(post)) {
+      return;
+    }
+
+    setActiveEditPostId(post.id);
+    setEditPostContent(post.content);
+    setPostActionError("");
+    setPostActionErrorTarget(null);
+  };
+
+  const handleCancelEditPost = () => {
+    setActiveEditPostId(null);
+    setEditPostContent("");
+    setPostActionError("");
+    setPostActionErrorTarget(null);
+  };
+
+  const handleSubmitEditPost = async (postId: string) => {
+    const content = editPostContent.trim();
+
+    if (!content) {
+      setPostActionError("Post content is required.");
+      setPostActionErrorTarget(postId);
+      return;
+    }
+
+    setPostActionTarget(postId);
+    setPostActionError("");
+    setPostActionErrorTarget(null);
+
+    try {
+      await postService.updatePost(postId, { content });
+      setActiveEditPostId(null);
+      setEditPostContent("");
+      await reloadPosts();
+    } catch (updateError) {
+      setPostActionError(getApiErrorMessage(updateError, "Could not update post."));
+      setPostActionErrorTarget(postId);
+    } finally {
+      setPostActionTarget(null);
+    }
+  };
+
+  const handleDeletePost = async (postId: string) => {
+    if (!window.confirm("Delete this post? This action cannot be undone.")) {
+      return;
+    }
+
+    setPostActionTarget(postId);
+    setPostActionError("");
+    setPostActionErrorTarget(null);
+
+    try {
+      await postService.deletePost(postId);
+      await reloadPosts();
+    } catch (deleteError) {
+      setPostActionError(getApiErrorMessage(deleteError, "Could not delete post."));
+      setPostActionErrorTarget(postId);
+    } finally {
+      setPostActionTarget(null);
+    }
+  };
+
   return (
     <div className="max-w-7xl mx-auto px-4 py-6">
       <div className="mb-4">
@@ -468,6 +722,30 @@ export default function ThreadDetailPage() {
             {thread.isLocked ? <span>Locked</span> : null}
             {thread.isPinned ? <span>Pinned</span> : null}
           </div>
+          {canManageThread ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={handleStartEditThread}
+                className="rounded-xs bg-blue-700 px-3 py-1 text-sm text-white"
+                data-testid="thread-edit-button"
+              >
+                Edit Thread
+              </button>
+              <button
+                type="button"
+                disabled={threadActionTarget === "delete"}
+                onClick={() => void handleDeleteThread()}
+                className="rounded-xs bg-red-700 px-3 py-1 text-sm text-white disabled:opacity-50"
+                data-testid="thread-delete-button"
+              >
+                {threadActionTarget === "delete" ? "Deleting..." : "Delete Thread"}
+              </button>
+            </div>
+          ) : null}
+          {threadActionError ? (
+            <div className="mt-2 text-sm text-red-600">{threadActionError}</div>
+          ) : null}
         </div>
 
         <div className="space-y-4 p-4">
@@ -490,9 +768,67 @@ export default function ThreadDetailPage() {
                 <div className="text-sm text-red-600">{voteError}</div>
               ) : null}
             </div>
-            <div className="whitespace-pre-wrap text-sm leading-6 text-gray-800">
-              {thread.content}
-            </div>
+            {isEditingThread ? (
+              <div className="space-y-3">
+                <div>
+                  <label
+                    htmlFor="edit-thread-title"
+                    className="block text-sm font-semibold text-gray-700"
+                  >
+                    Title
+                  </label>
+                  <input
+                    id="edit-thread-title"
+                    type="text"
+                    value={threadTitleInput}
+                    onChange={(event) => setThreadTitleInput(event.target.value)}
+                    className="mt-1 w-full rounded-xs border p-2 text-sm"
+                    data-testid="thread-edit-title-input"
+                  />
+                </div>
+                <div>
+                  <label
+                    htmlFor="edit-thread-content"
+                    className="block text-sm font-semibold text-gray-700"
+                  >
+                    Content
+                  </label>
+                  <textarea
+                    id="edit-thread-content"
+                    value={threadContentInput}
+                    onChange={(event) => setThreadContentInput(event.target.value)}
+                    className="mt-1 min-h-32 w-full rounded-xs border p-2 text-sm"
+                    data-testid="thread-edit-content-input"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    disabled={
+                      !threadTitleInput.trim() ||
+                      !threadContentInput.trim() ||
+                      threadActionTarget === "update"
+                    }
+                    onClick={() => void handleSubmitEditThread()}
+                    className="rounded-xs bg-blue-700 px-4 py-2 text-sm text-white disabled:opacity-50"
+                    data-testid="thread-edit-submit"
+                  >
+                    {threadActionTarget === "update" ? "Saving..." : "Save Thread"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCancelEditThread}
+                    className="rounded-xs bg-gray-200 px-4 py-2 text-sm text-gray-700"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="whitespace-pre-wrap text-sm leading-6 text-gray-800">
+                {thread.content}
+              </div>
+            )}
           </div>
 
           <section className="space-y-3">
@@ -563,6 +899,17 @@ export default function ThreadDetailPage() {
                   canVote={canVote}
                   voteLoadingTarget={voteLoadingTarget}
                   onVotePost={handleVotePost}
+                  canManagePost={canManagePost}
+                  activeEditPostId={activeEditPostId}
+                  editPostContent={editPostContent}
+                  postActionTarget={postActionTarget}
+                  postActionError={postActionError}
+                  postActionErrorTarget={postActionErrorTarget}
+                  onEditPost={handleStartEditPost}
+                  onCancelEditPost={handleCancelEditPost}
+                  onEditPostContentChange={setEditPostContent}
+                  onSubmitEditPost={handleSubmitEditPost}
+                  onDeletePost={handleDeletePost}
                 />
               ))
             )}

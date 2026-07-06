@@ -1,9 +1,11 @@
 import { apiClient } from "./apiClient";
 import type {
   CreatePostRequest,
+  DeleteResponse,
   PaginatedResponse,
   Post,
   PostQueryParams,
+  UpdatePostRequest,
 } from "../types/forum";
 
 function buildPostQuery(params: PostQueryParams = {}) {
@@ -29,6 +31,16 @@ export const postService = {
 
   async createPost(input: CreatePostRequest) {
     const response = await apiClient.post<Post>("/posts", input);
+    return response.data;
+  },
+
+  async updatePost(id: string, input: UpdatePostRequest) {
+    const response = await apiClient.put<Post>(`/posts/${id}`, input);
+    return response.data;
+  },
+
+  async deletePost(id: string) {
+    const response = await apiClient.delete<DeleteResponse>(`/posts/${id}`);
     return response.data;
   },
 };
