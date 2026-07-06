@@ -83,6 +83,7 @@ model Thread {
   author   User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
   category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   posts    Post[]
+  votes    Vote[]   @relation("ThreadVotes")
 
   @@map("threads")
 }
@@ -109,18 +110,22 @@ model Post {
 
 // Model Vote - Hệ thống vote
 model Vote {
-  id       String   @id @default(cuid())
-  userId   String
-  targetId String   // ID của thread hoặc post
-  type     VoteType // THREAD hoặc POST
-  value    Int      // 1 cho upvote, -1 cho downvote
+  id        String   @id @default(cuid())
+  userId    String
+  postId    String?
+  threadId  String?
+  type      VoteType
+  value     Int
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  post Post? @relation("PostVotes", fields: [targetId], references: [id])
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post   Post?   @relation("PostVotes", fields: [postId], references: [id], onDelete: Cascade)
+  thread Thread? @relation("ThreadVotes", fields: [threadId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, targetId, type])
+  @@unique([userId, postId])
+  @@unique([userId, threadId])
   @@map("votes")
 }
 

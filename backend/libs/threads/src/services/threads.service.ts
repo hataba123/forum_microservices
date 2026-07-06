@@ -100,6 +100,25 @@ export class ThreadsService {
     return slug;
   }
 
+  private appendVoteStats(threads: any[]) {
+    return threads.map((thread) => {
+      const votes = thread.votes || [];
+      const upvotes = votes.filter((vote) => vote.value === 1).length;
+      const downvotes = votes.filter((vote) => vote.value === -1).length;
+      const { votes: _votes, ...safeThread } = thread;
+
+      return {
+        ...safeThread,
+        voteStats: {
+          upvotes,
+          downvotes,
+          score: upvotes - downvotes,
+          total: votes.length,
+        },
+      };
+    });
+  }
+
   async create(createThreadDto: CreateThreadDto, user: any) {
     await this.getActiveCategory(createThreadDto.categoryId);
 
@@ -166,7 +185,14 @@ export class ThreadsService {
     const [threads, total] = await Promise.all([
       this.prisma.thread.findMany({
         where,
-        include: this.threadInclude,
+        include: {
+          ...this.threadInclude,
+          votes: {
+            select: {
+              value: true,
+            },
+          },
+        },
         orderBy: [{ isPinned: "desc" }, { createdAt: "desc" }],
         skip,
         take: limit,
@@ -175,7 +201,7 @@ export class ThreadsService {
     ]);
 
     return {
-      data: threads,
+      data: this.appendVoteStats(threads),
       pagination: {
         page,
         limit,
@@ -196,6 +222,11 @@ export class ThreadsService {
         },
         include: {
           ...this.threadInclude,
+          votes: {
+            select: {
+              value: true,
+            },
+          },
           posts: {
             include: {
               author: {
@@ -224,7 +255,7 @@ export class ThreadsService {
       throw new NotFoundException("Khong tim thay thread");
     }
 
-    return thread;
+    return this.appendVoteStats([thread])[0];
   }
 
   async update(id: string, updateThreadDto: UpdateThreadDto, user: any) {

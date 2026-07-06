@@ -10,6 +10,25 @@ import { PrismaService } from "@libs/shared";
 export class PostsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private appendVoteStats(posts: any[]) {
+    return posts.map((post) => {
+      const votes = post.votes || [];
+      const upvotes = votes.filter((vote) => vote.value === 1).length;
+      const downvotes = votes.filter((vote) => vote.value === -1).length;
+      const { votes: _votes, ...safePost } = post;
+
+      return {
+        ...safePost,
+        voteStats: {
+          upvotes,
+          downvotes,
+          score: upvotes - downvotes,
+          total: votes.length,
+        },
+      };
+    });
+  }
+
   /**
    * Lấy danh sách bài viết với phân trang
    * @param params - Tham số tìm kiếm và phân trang
@@ -47,6 +66,11 @@ export class PostsService {
               children: true,
             },
           },
+          votes: {
+            select: {
+              value: true,
+            },
+          },
         },
         orderBy: { createdAt: "desc" },
         skip,
@@ -56,7 +80,7 @@ export class PostsService {
     ]);
 
     return {
-      data: posts,
+        data: this.appendVoteStats(posts),
       pagination: {
         page,
         limit,
@@ -125,6 +149,11 @@ export class PostsService {
             children: true,
           },
         },
+        votes: {
+          select: {
+            value: true,
+          },
+        },
       },
     });
 
@@ -132,7 +161,7 @@ export class PostsService {
       throw new NotFoundException("Không tìm thấy bài viết");
     }
 
-    return post;
+    return this.appendVoteStats([post])[0];
   }
 
   /**

@@ -2,3 +2,4 @@
 export * from "./votes.module";
 export * from "./controllers/votes.controller";
 export * from "./services/votes.service";
+export * from "./dto/create-vote.dto";

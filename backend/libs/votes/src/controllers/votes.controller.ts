@@ -16,6 +16,8 @@ import {
 import { VotesService } from "../services/votes.service";
 import { JwtAuthGuard } from "@libs/auth/guards/jwt-auth.guard";
 import { CurrentUser } from "@libs/auth/decorators/current-user.decorator";
+import { CreateVoteDto } from "../dto/create-vote.dto";
+import { VoteType } from "@prisma/client";
 
 @ApiTags("Votes")
 @Controller("votes")
@@ -28,7 +30,7 @@ export class VotesController {
   @ApiOperation({ summary: "Vote cho thread hoặc post" })
   @ApiResponse({ status: 201, description: "Vote thành công" })
   @ApiResponse({ status: 401, description: "Chưa đăng nhập" })
-  async vote(@Body() voteDto: any, @CurrentUser() user: any) {
+  async vote(@Body() voteDto: CreateVoteDto, @CurrentUser() user: any) {
     return this.votesService.vote(voteDto, user.id);
   }
 
@@ -43,6 +45,6 @@ export class VotesController {
     @Param("type") type: string,
     @CurrentUser() user: any
   ) {
-    return this.votesService.removeVote(targetId, type as any, user.id);
+    return this.votesService.removeVote(targetId, type as VoteType, user.id);
   }
 }

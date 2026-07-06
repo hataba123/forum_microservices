@@ -1304,3 +1304,177 @@ Fail:
 2. Thêm soft delete cho thread/post trong phase schema có kiểm soát nếu muốn giữ lịch sử.
 3. Tích hợp frontend với API threads: list/detail/create.
 4. Bổ sung e2e test auth + thread CRUD qua HTTP.
+## Phase 2C Votes Fix Result
+
+Ngày thực hiện: 2026-07-06
+
+### Vấn đề vote cũ
+
+- `Vote.targetId` là field đa hình nhưng lại có foreign key trực tiếp về `posts.id`.
+- `VoteType` có cả `POST` và `THREAD`, trong khi schema chỉ relation được với `Post`.
+- Service cũ cho phép vote thread bằng `targetId`, nhưng DB không có relation rõ với `Thread`; thread vote có thể fail hoặc sai mô hình dữ liệu.
+
+### Schema vote mới
+
+`Vote` hiện dùng target rõ ràng:
+
+- `userId`
+- `postId` nullable
+- `threadId` nullable
+- `type`
+- `value`
+- `createdAt`
+- `updatedAt`
+
+Relations:
+
+- `Vote.user -> User`
+- `Vote.post -> Post?`
+- `Vote.thread -> Thread?`
+- `Post.votes`
+- `Thread.votes`
+
+Constraints:
+
+- `@@unique([userId, postId])`
+- `@@unique([userId, threadId])`
+
+Service enforce thêm:
+
+- `type = POST` thì bắt buộc có `postId`, không có `threadId`.
+- `type = THREAD` thì bắt buộc có `threadId`, không có `postId`.
+- Không cho request vừa có `postId` vừa có `threadId`.
+- Không cho thiếu target.
+
+### Migration
+
+- Có migration mới: `backend/prisma/migrations/20260706000001_fix_vote_targets/migration.sql`.
+- Tạo bằng `prisma migrate diff` vì `migrate dev` non-interactive dừng ở warning unique constraint.
+- Migration đã apply thành công bằng `npx prisma migrate deploy`.
+- Migration preserve dữ liệu cũ bằng cách:
+  - Thêm `postId`, `threadId`, `updatedAt`.
+  - Copy `targetId` sang `postId` khi `type = POST`.
+  - Copy `targetId` sang `threadId` khi `type = THREAD`.
+  - Sau đó mới drop `targetId`.
+- Không dùng `prisma migrate reset`.
+- Không drop database.
+
+### File đã sửa/thêm
+
+- `backend/prisma/schema.prisma`
+- `backend/prisma/migrations/20260706000001_fix_vote_targets/migration.sql`
+- `backend/libs/votes/src/dto/create-vote.dto.ts`
+- `backend/libs/votes/src/controllers/votes.controller.ts`
+- `backend/libs/votes/src/services/votes.service.ts`
+- `backend/libs/votes/src/services/votes.service.spec.ts`
+- `backend/libs/votes/src/index.ts`
+- `backend/libs/posts/src/services/posts.service.ts`
+- `backend/libs/threads/src/services/threads.service.ts`
+- `PROJECT_PROGRESS_AUDIT.md`
+
+### Endpoint vote hiện tại
+
+- `POST /api/votes`
+  - JWT required.
+  - Body cho post:
+
+```json
+{
+  "type": "POST",
+  "postId": "<postId>",
+  "value": 1
+}
+```
+
+  - Body cho thread:
+
+```json
+{
+  "type": "THREAD",
+  "threadId": "<threadId>",
+  "value": 1
+}
+```
+
+- `DELETE /api/votes/:targetId/:type`
+  - Giữ route cũ để không breaking.
+  - `POST` map `targetId` thành `postId`.
+  - `THREAD` map `targetId` thành `threadId`.
+
+Response vote gồm:
+
+- `voted`
+- `value`
+- `targetType`
+- `targetId`
+- `upvotes`
+- `downvotes`
+- `score`
+- `total`
+
+### Logic vote
+
+- Vote lần đầu: create vote.
+- Vote lại cùng value: toggle remove, trả `voted=false`, `value=0`.
+- Vote ngược chiều: update value.
+- Target không tồn tại: `NotFoundException`.
+- Body sai target/type: `BadRequestException`.
+
+### Posts/Threads response
+
+- `GET /api/threads` và `GET /api/threads/:id` có thêm `voteStats`.
+- `GET /api/posts` và `GET /api/posts/:id` có thêm `voteStats`.
+- Vẫn giữ `_count` hiện có.
+- Không trả password của author.
+
+### Test
+
+Unit test mới cho `VotesService` cover:
+
+- Vote post lần đầu tạo vote.
+- Vote cùng value lần 2 toggle remove.
+- Vote ngược chiều update value.
+- Vote thread hoạt động với `threadId`.
+- POST thiếu `postId` bị `BadRequestException`.
+- THREAD thiếu `threadId` bị `BadRequestException`.
+- Target không tồn tại bị `NotFoundException`.
+
+Smoke API local đã chạy:
+
+- Login seed user: PASS.
+- Vote thread up: PASS.
+- Vote thread opposite/down: PASS.
+- Delete thread vote: PASS.
+- Vote post up: PASS.
+- Vote post cùng value để toggle: PASS.
+- Vote post down: PASS.
+- Delete post vote: PASS.
+
+### Lệnh verify
+
+Pass:
+
+- `npm ci`
+- `npx prisma validate`
+- `npx prisma generate`
+- `npx prisma migrate status`
+- `npm run build`
+- `npm test`
+- `npx eslint "apps/**/*.ts" "libs/**/*.ts"`
+
+Fail:
+
+- Không còn lệnh Phase 2C nào fail.
+
+### Rủi ro còn lại
+
+- DB-level check constraint để đảm bảo đúng một trong `postId/threadId` chưa có vì Prisma schema không hỗ trợ trực tiếp check constraint portable trong model.
+- Logic service đã enforce target/type; nếu có write ngoài service trực tiếp vào DB thì vẫn có thể tạo row không hợp lệ.
+- Vote notification chưa implement.
+- Frontend chưa tích hợp vote API.
+
+### Bước tiếp theo đề xuất
+
+1. Phase 2D: hoàn thiện Posts DTO/service để đồng bộ validation và permission với Threads.
+2. Hoặc chuyển sang frontend tích hợp auth + threads + votes nếu muốn kiểm thử end-to-end UI sớm.
+3. Cân nhắc thêm DB check constraint thủ công trong migration riêng nếu muốn khóa chặt invariant post/thread vote ở database.
