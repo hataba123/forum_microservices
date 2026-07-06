@@ -819,3 +819,121 @@ Lưu ý:
 3. Implement `threads.service.ts` bằng Prisma vì hiện vẫn là placeholder.
 4. Tích hợp frontend với API thật cho register/login/homepage.
 5. Tách phase riêng cho audit vulnerability/package upgrade vì có thể kéo theo breaking change.
+## Phase 2A Database/Auth Security Result
+
+Ngày thực hiện: 2026-07-06
+
+### Database config đã kiểm tra
+
+- Prisma provider: PostgreSQL.
+- `backend/.env.example` dùng PostgreSQL local mẫu: host `localhost`, database `forum_voz`.
+- `backend/.env` hiện tại có `DATABASE_URL` trỏ host `localhost`, port `5432`, database `forum_db`.
+- Không in user/password/secret ra báo cáo.
+- Vì host là `localhost`, đây được xem là local dev an toàn để thử migration.
+
+### File đã sửa
+
+- `backend/libs/users/src/services/users.service.ts`
+  - `UsersService.create` hash password bằng bcrypt trước khi lưu.
+  - `create`, `findById`, `findByUsername`, `findByEmailOrUsername`, `update`, `remove` loại `password` khỏi object trả ra.
+  - `findByEmail` vẫn trả password vì auth/internal cần dùng để `bcrypt.compare`.
+
+- `backend/libs/auth/src/services/auth.service.ts`
+  - `register` không hash trước nữa để tránh double-hash; password raw được truyền vào `UsersService.create`, nơi duy nhất chịu trách nhiệm hash.
+  - `login` vẫn không trả password trong response.
+  - `me/getProfile` dùng `findById`, hiện đã không có password.
+
+- `backend/package.json`
+  - Thêm script `seed`.
+  - Thêm cấu hình `prisma.seed`.
+
+- `backend/prisma/seed.ts`
+  - Thêm seed dev idempotent.
+  - Password dev được hash bằng bcrypt.
+  - Dùng `upsert` để chạy lại không tạo trùng user/category/thread/post.
+
+- `backend/prisma/migrations/20260706000000_init/migration.sql`
+  - Tạo baseline migration SQL bằng `npx prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script`.
+
+### Migration
+
+- Đã tạo migration baseline trong repo: `backend/prisma/migrations/20260706000000_init/migration.sql`.
+- Chưa apply được migration vào DB local vì Prisma migration engine fail.
+- Lệnh đã thử:
+  - `npx prisma migrate dev --name init`: FAIL
+  - `npx prisma migrate dev --name init --create-only` với debug/backtrace: FAIL
+  - `npx prisma migrate deploy`: FAIL
+  - `npx prisma migrate status`: FAIL
+- Lỗi còn lại chính xác:
+
+```text
+Error: Schema engine error:
+```
+
+- Prisma version tại máy audit:
+  - `prisma`: 5.22.0
+  - `@prisma/client`: 5.22.0
+  - Node.js: v26.4.0
+  - OS/binary target: Windows x64
+
+### Seed
+
+- Đã tạo seed file: `backend/prisma/seed.ts`.
+- Chưa chạy seed vì migration chưa apply được; tránh ghi dữ liệu vào DB chưa chắc có schema đúng.
+- User dev mẫu được định nghĩa trong seed:
+  - Admin: `admin@example.com` / `Admin@123456`
+  - User: `user@example.com` / `User@123456`
+- Đây là credential local/dev, không phải production secret.
+- Seed category mẫu:
+  - `general`
+  - `mobile-it`
+  - `game-entertainment`
+- Seed thêm 1 thread mẫu và 2 post mẫu bằng Prisma vì schema hiện hỗ trợ `Thread`/`Post`; phần service threads vẫn chưa implement trong Phase 2A.
+
+### Security đã sửa
+
+- API-facing user response không còn trả field `password` qua `UsersService.findById`, `create`, `update`, `remove`.
+- `UsersService.findMany` trước đó đã dùng `select` không có password và vẫn giữ nguyên.
+- `UsersService.create` không còn lưu plaintext password khi admin tạo user qua `POST /api/users`.
+- `AuthService.register` không phá flow register/login: password được hash một lần tại `UsersService.create`.
+- `AuthService.login` vẫn dùng `findByEmail` để lấy hash password phục vụ `bcrypt.compare`, response login không chứa password.
+
+### Refresh token/session audit
+
+- Auth hiện vẫn set refresh token cookie khi login.
+- Chưa có endpoint refresh token.
+- Chưa persist/revoke refresh token vào `Session` dù schema có model `Session`.
+- Không implement refresh/session trong Phase 2A vì sẽ cần thay đổi flow auth lớn hơn phạm vi minimal fix.
+
+### Lệnh đã chạy và kết quả
+
+Backend:
+
+- `npm ci`: PASS
+- `npx prisma validate`: PASS
+- `npx prisma generate`: PASS
+- `npm run build`: PASS
+- `npm test`: PASS, 1 test passed
+- `npx eslint "apps/**/*.ts" "libs/**/*.ts"`: PASS
+
+Migration/seed:
+
+- `npx prisma migrate dev --name init`: FAIL với `Schema engine error:`
+- `npx prisma migrate deploy`: FAIL với `Schema engine error:`
+- `npx prisma migrate status`: FAIL với `Schema engine error:`
+- `npm run seed`: chưa chạy vì migration chưa apply được.
+
+### Vấn đề còn lại
+
+- Cần xử lý lỗi Prisma schema engine local trước khi apply migration/seed được.
+- `Vote` schema vẫn là thiết kế đa hình `targetId` nhưng relation chỉ trỏ `Post`; đây chưa sửa trong Phase 2A.
+- Refresh token/session vẫn chưa hoàn chỉnh.
+- Threads service vẫn placeholder, đúng phạm vi Phase 2A là chưa implement.
+- npm audit vulnerabilities vẫn còn, chưa xử lý trong Phase 2A.
+
+### Bước tiếp theo đề xuất cho Phase 2B
+
+1. Sửa/blocker Prisma migrate engine trên môi trường local, ưu tiên thử Node LTS thay vì Node v26 hoặc chạy migration trong môi trường Docker/dev shell ổn định.
+2. Apply baseline migration và chạy `npm run seed` hai lần để xác nhận idempotent.
+3. Nếu DB đã ổn, xử lý tiếp schema vote thread/post trước khi implement vote đầy đủ.
+4. Phase 2B nên implement `threads.service.ts` bằng Prisma ở mức CRUD tối thiểu, chưa mở rộng realtime/media.

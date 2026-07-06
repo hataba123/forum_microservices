@@ -30,14 +30,11 @@ export class AuthService {
       }
     }
 
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 12);
-
     // Tạo user mới
     const user = await this.usersService.create({
       username,
       email,
-      password: hashedPassword,
+      password,
     });
 
     return {
